@@ -7,7 +7,7 @@ permalink: /studying/algorithm/catch
 
 ### CATCH 알고리즘 스터디 방
 **CODEUP**  
-[1010~1019](https://namhyo01.github.io/studying/algorithm/catch/1010-1019)
+[1010~1019](https://namhyo01.github.io/studying/algorithm/catch/1010-1019)  
 [1020~1029](https://namhyo01.github.io/studying/algorithm/catch/1020-1029)  
 [1030~1039](https://namhyo01.github.io/studying/algorithm/catch/1030-1039)  
 [1040~1049](https://namhyo01.github.io/studying/algorithm/catch/1040-1049)  
