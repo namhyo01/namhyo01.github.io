@@ -1,7 +1,7 @@
 ---
 layout: page
 title: 알고리즘
-permalink: /studying/algorithm/catch/baekjoon
+permalink: /studying/algorithm/catch/baekjoon/
 ---
 
 
