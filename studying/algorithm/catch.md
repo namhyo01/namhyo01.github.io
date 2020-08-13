@@ -19,4 +19,4 @@ permalink: /studying/algorithm/catch
  
 
 
-[스터디중](https://namhyo01.github.io/studying/algorithm)
+[이전으로](https://namhyo01.github.io/studying/algorithm)
