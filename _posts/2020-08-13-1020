@@ -1,0 +1,23 @@
+---
+layout: post
+title: 1020
+permalink: /studying/algorithm/catch/1020
+---
+1.
+```
+x = input().split('-')
+print(x[0],x[1],sep='')
+
+```  
+2.
+```
+#x = input().split('-')
+#print(x[0],x[1],sep='')
+x = input().replace('-','')
+print(x)
+
+```
+  
+    
+    
+<div style="text-align: right"> <a href = 'https://namhyo01.github.io/studying/algorithm/catch'> [이전으로] </a> </div>
