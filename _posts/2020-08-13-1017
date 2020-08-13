@@ -1,0 +1,15 @@
+---
+layout: post
+title: 1017
+permalink: /studying/algorithm/catch/1017
+---
+
+```
+x = input()
+print(x,x,x,sep=' ')
+
+```
+  
+    
+    
+<div style="text-align: right"> <a href = 'https://namhyo01.github.io/studying/algorithm/catch'> [이전으로] </a> </div>
