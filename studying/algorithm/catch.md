@@ -53,4 +53,4 @@ permalink: /studying/algorithm/catch
 
 
 
-[이전으로](https://namhyo01.github.io/studying/algorithm) <p></p><p></p><p></p><p></p>            [백준문제](https://namhyo01.github.io/studying/algorithm/catch/baekjoon)
+[이전으로](https://namhyo01.github.io/studying/algorithm)　　　　[백준문제](https://namhyo01.github.io/studying/algorithm/catch/baekjoon)
