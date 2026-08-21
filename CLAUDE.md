@@ -76,6 +76,28 @@ Discussion 하나가 생깁니다. **글의 URL(파일명 slug)을 바꾸면 그
 
 동작하려면 저장소에 giscus GitHub App 이 설치되어 있어야 합니다.
 
+## 방문 통계 (GoatCounter)
+
+`_config.yml` 의 `analytics.goatcounter.id: namhyo`, `pageviews.provider: goatcounter`.
+대시보드는 https://namhyo.goatcounter.com 입니다.
+
+**수집과 표시는 별개입니다.**
+
+- 수집(`POST /count`)은 설정 없이 바로 됩니다.
+- 글에 조회수를 **표시**하려면 GoatCounter 쪽 *Site settings* 에서
+  **"Allow adding visitor counts on your website"** 를 켜야 합니다. 기본값이 꺼짐이라
+  안 켜면 `GET /counter/<path>.json` 이 403 을 돌려주고, Chirpy 는 실패 시
+  숫자를 **'1' 로 표시**합니다. 모든 글이 조회수 1로 보이면 이 설정을 의심하세요.
+- 켠 뒤에도 카운터 응답은 최대 4시간 캐시됩니다.
+
+확인 방법:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" \
+  "https://namhyo.goatcounter.com/counter/%2Fposts%2Falb-vs-nlb.json"
+# 200 이면 정상, 403 이면 위 설정이 꺼져 있음
+```
+
 ## 배포
 
 `main`에 push → `.github/workflows/pages-deploy.yml`이 빌드·검사 후 GitHub Pages에 배포.
