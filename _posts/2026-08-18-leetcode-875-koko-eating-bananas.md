@@ -6,7 +6,7 @@ tags: ["leetcode", "이분탐색", "go"]
 description: "정렬된 배열에서 값을 찾는 게 아니라 '답' 자체를 이분탐색하는 문제. 판정 함수를 세우는 게 전부다."
 ---
 
-이직 준비로 LeetCode를 다시 풀기 시작했다. 유형을 미리 알면 훈련이 안 되므로,
+LeetCode를 다시 풀기 시작했다. 유형을 미리 알면 훈련이 안 되므로,
 문제만 받고 유형은 스스로 판별하는 방식으로 하고 있다.
 
 - 문제: [875. Koko Eating Bananas](https://leetcode.com/problems/koko-eating-bananas/)
