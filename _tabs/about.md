@@ -13,7 +13,7 @@ order: 5
 
 | | |
 | --- | --- |
-| 이메일 | [namhyo01@gmail.com](mailto:namhyo01@gmail.com) |
+| 이메일 | [namhyo01@naver.com](mailto:namhyo01@naver.com) |
 | GitHub | [github.com/namhyo01](https://github.com/namhyo01) |
 | 이전 블로그 | [namhyo00.tistory.com](https://namhyo00.tistory.com/) |
 
