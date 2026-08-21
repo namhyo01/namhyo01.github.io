@@ -1,0 +1,155 @@
+---
+import BaseHead from '../components/BaseHead.astro';
+import Footer from '../components/Footer.astro';
+import FormattedDate from '../components/FormattedDate.astro';
+import Header from '../components/Header.astro';
+import TagList from '../components/TagList.astro';
+import { GITHUB_URL, SITE_DESCRIPTION, SITE_TITLE } from '../consts';
+import { getPosts, getProjects } from '../lib/collections';
+
+const recentPosts = (await getPosts()).slice(0, 4);
+const featuredProjects = (await getProjects()).slice(0, 3);
+---
+
+<!doctype html>
+<html lang="ko">
+	<head>
+		<BaseHead title={SITE_TITLE} description={SITE_DESCRIPTION} />
+		<style>
+			.hero {
+				padding: 1em 0 2.5em 0;
+			}
+			.hero h1 {
+				margin: 0 0 0.3em 0;
+				font-size: 2.4rem;
+			}
+			.hero p {
+				margin: 0 0 1.2em 0;
+				color: rgb(var(--gray));
+			}
+			.hero-links {
+				display: flex;
+				gap: 0.8em;
+				flex-wrap: wrap;
+			}
+			.hero-links a {
+				padding: 0.4em 1.2em;
+				border: 1px solid rgba(var(--gray), 35%);
+				border-radius: 8px;
+				font-size: 0.9rem;
+				text-decoration: none;
+			}
+			.hero-links a:hover {
+				border-color: var(--accent);
+			}
+			section {
+				margin-bottom: 3em;
+			}
+			.section-head {
+				display: flex;
+				align-items: baseline;
+				justify-content: space-between;
+				margin-bottom: 1em;
+			}
+			.section-head h2 {
+				margin: 0;
+				font-size: 1.5rem;
+			}
+			.section-head a {
+				font-size: 0.85rem;
+			}
+			ul {
+				list-style: none;
+				margin: 0;
+				padding: 0;
+			}
+			li {
+				padding: 1em 0;
+				border-top: 1px solid rgba(var(--gray), 15%);
+			}
+			li h3 {
+				margin: 0 0 0.2em 0;
+				font-size: 1.1rem;
+				line-height: 1.4;
+			}
+			li h3 a {
+				color: rgb(var(--black));
+				text-decoration: none;
+			}
+			li h3 a:hover {
+				color: var(--accent);
+			}
+			li p {
+				margin: 0 0 0.5em 0;
+				color: rgb(var(--gray));
+				font-size: 0.9rem;
+			}
+			.date {
+				font-size: 0.8rem;
+			}
+			.empty {
+				color: rgb(var(--gray));
+				font-size: 0.9rem;
+			}
+		</style>
+	</head>
+	<body>
+		<Header />
+		<main>
+			<div class="hero">
+				<h1>안녕하세요 👋</h1>
+				<p>{SITE_DESCRIPTION}</p>
+				<div class="hero-links">
+					<a href="/projects">포트폴리오 보기</a>
+					<a href="/blog">글 읽기</a>
+					<a href={GITHUB_URL} target="_blank" rel="noopener">GitHub</a>
+				</div>
+			</div>
+
+			<section>
+				<div class="section-head">
+					<h2>Projects</h2>
+					<a href="/projects">전체 보기 →</a>
+				</div>
+				{featuredProjects.length === 0 && <p class="empty">아직 등록한 프로젝트가 없습니다.</p>}
+				<ul>
+					{
+						featuredProjects.map((project) => (
+							<li>
+								<h3>
+									<a href={`/projects/${project.id}/`}>{project.data.title}</a>
+								</h3>
+								<p>{project.data.description}</p>
+								<TagList tags={project.data.stack} />
+							</li>
+						))
+					}
+				</ul>
+			</section>
+
+			<section>
+				<div class="section-head">
+					<h2>Recent posts</h2>
+					<a href="/blog">전체 보기 →</a>
+				</div>
+				{recentPosts.length === 0 && <p class="empty">아직 작성한 글이 없습니다.</p>}
+				<ul>
+					{
+						recentPosts.map((post) => (
+							<li>
+								<p class="date">
+									<FormattedDate date={post.data.pubDate} />
+								</p>
+								<h3>
+									<a href={`/blog/${post.id}/`}>{post.data.title}</a>
+								</h3>
+								<p>{post.data.description}</p>
+							</li>
+						))
+					}
+				</ul>
+			</section>
+		</main>
+		<Footer />
+	</body>
+</html>
