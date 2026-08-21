@@ -1,0 +1,36 @@
+<!--
+  브라우저 UI(모바일 주소창) 색을 실제 적용된 테마에 맞춥니다.
+
+  테마 기본값은 `theme-color` 메타 두 개가 prefers-color-scheme 으로만 갈라져 있어서,
+  OS가 라이트인데 사이트에서 수동으로 다크를 고르면 주소창만 밝은 채로 남습니다.
+  Chirpy가 <html> 에 실어주는 data-bs-theme 을 따라가도록 바꿉니다.
+
+  주의: 프로덕션 빌드는 HTML을 한 줄로 압축합니다. 아래 스크립트에 `//` 줄 주석을 쓰면
+  뒤따르는 코드가 전부 주석 처리되어 버리므로 블록 주석만 사용합니다.
+-->
+<script>
+  (function () {
+    var COLORS = { light: '#f7f7f7', dark: '#1b1b1e' };
+    var metas = document.querySelectorAll('meta[name="theme-color"]');
+    if (!metas.length) return;
+    /* media 로 갈라진 메타를 하나로 합쳐 스크립트가 값을 통제하게 합니다. */
+    var meta = metas[0];
+    for (var i = 1; i < metas.length; i++) { metas[i].remove(); }
+    meta.removeAttribute('media');
+    var media = window.matchMedia('(prefers-color-scheme: dark)');
+    function apply() {
+      var mode = document.documentElement.getAttribute('data-bs-theme');
+      /* 아직 '시스템' 상태면 OS 설정을 따릅니다. */
+      if (mode !== 'light' && mode !== 'dark') { mode = media.matches ? 'dark' : 'light'; }
+      meta.setAttribute('content', COLORS[mode]);
+    }
+    apply();
+    /* 테마 스크립트가 data-bs-theme 을 바꾸는 시점을 따라갑니다. */
+    new MutationObserver(apply).observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-bs-theme']
+    });
+    if (media.addEventListener) { media.addEventListener('change', apply); }
+    else if (media.addListener) { media.addListener(apply); }
+  })();
+</script>
