@@ -1,0 +1,268 @@
+---
+---
+
+@use 'abstracts/variables' with (
+  $theme: '{{ site.theme_mode }}'
+);
+
+/* prettier-ignore */
+@use 'main
+{%- if jekyll.environment == 'production' -%}
+  .bundle
+{%- endif -%}
+';
+
+/* append your custom style below */
+
+/* ─────────────────────────────────────────────────────────────
+   1. 사이드바 상단 테마 전환기
+   기본 테마는 사이드바 맨 아래 구석에 아이콘만 뒀는데 눈에 띄지 않아,
+   _includes/sidebar.html 에서 프로필 바로 아래로 옮기고 라벨을 붙였습니다.
+   ───────────────────────────────────────────────────────────── */
+
+.theme-switch {
+  padding: 0 1rem;
+  margin-bottom: 0.75rem;
+
+  #mode-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.45rem 0.9rem;
+    border: 1px solid var(--sidebar-border-color);
+    border-radius: 0.6rem;
+    background-color: var(--sidebar-btn-bg);
+    color: var(--sidebar-muted-color);
+    font-size: 0.85rem;
+    line-height: 1.4;
+    transition:
+      background-color 0.18s ease,
+      border-color 0.18s ease,
+      color 0.18s ease,
+      transform 0.18s ease;
+
+    &:hover {
+      border-color: var(--link-color);
+      background-color: var(--sidebar-hover-bg);
+      color: var(--sidebar-active-color);
+    }
+
+    &:active {
+      transform: scale(0.98);
+    }
+
+    /* 현재 모드에 해당하는 아이콘 하나만 보여줍니다. */
+    > i[data-theme-mode] {
+      display: none;
+      font-size: 0.95rem;
+    }
+  }
+
+  .theme-switch-label {
+    flex: 1;
+    text-align: left;
+  }
+
+  .theme-switch-caret {
+    font-size: 0.65rem;
+    opacity: 0.6;
+    transition: transform 0.18s ease;
+  }
+
+  #mode-toggle[aria-expanded='true'] .theme-switch-caret {
+    transform: rotate(180deg);
+  }
+
+  /* 테마의 드롭다운 스타일은 .sidebar-bottom 안에만 걸려 있어서,
+     위로 옮기면 함께 따라오지 않습니다. 같은 변수로 다시 정의합니다.
+     이걸 빼면 Bootstrap 기본 파란 배경이 그대로 드러납니다. */
+  .dropdown-menu {
+    min-width: 100%;
+    background-color: var(--menu-bg);
+    border-color: var(--menu-border-color);
+    box-shadow: var(--menu-shadow-color) 0 1px 4px;
+    border-radius: 0.75rem !important;
+
+    &.show {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      animation: menu-pop 0.2s ease-out;
+    }
+
+    .dropdown-item {
+      border-radius: 0.5rem;
+      color: var(--sidebar-muted-color);
+      font-size: 90%;
+
+      &.active {
+        font-weight: 600;
+        color: var(--menu-active-color);
+
+        &::after {
+          content: '\f00c';
+          font: var(--fa-font-solid);
+          font-size: 0.75rem;
+          color: var(--sidebar-btn-color);
+          margin-left: auto;
+          padding-left: 1rem;
+        }
+      }
+
+      &:active,
+      &:hover,
+      &.active {
+        background-color: var(--menu-highlight-bg);
+      }
+
+      > i {
+        color: var(--sidebar-btn-color);
+        margin-right: 0.5rem;
+      }
+    }
+  }
+}
+
+/* 어떤 아이콘을 보일지: 사용자가 직접 고른 경우엔 그 모드, 아니면 '시스템' */
+:root[data-theme-persisted][data-bs-theme='light'] .theme-switch #mode-toggle > i[data-theme-mode='light'],
+:root[data-theme-persisted][data-bs-theme='dark'] .theme-switch #mode-toggle > i[data-theme-mode='dark'],
+:root:not([data-theme-persisted]) .theme-switch #mode-toggle > i[data-theme-mode='system'] {
+  display: inline-block;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   2. 움직임
+   과하지 않게, 상호작용에 반응이 있다는 정도만.
+   ───────────────────────────────────────────────────────────── */
+
+/* 테마를 바꿀 때 색이 툭 끊기지 않도록 */
+body,
+#sidebar,
+.card-wrapper,
+#topbar-wrapper {
+  transition:
+    background-color 0.25s ease,
+    border-color 0.25s ease,
+    color 0.25s ease;
+}
+
+/* 글 목록 카드: 올려두면 살짝 떠오릅니다 */
+#post-list .card-wrapper {
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    border-color 0.2s ease;
+  will-change: transform;
+
+  &:hover {
+    transform: translateY(-3px);
+    border-color: var(--link-color);
+    box-shadow: 0 6px 20px rgb(0 0 0 / 10%);
+  }
+
+  .card-title {
+    transition: color 0.2s ease;
+  }
+
+  &:hover .card-title {
+    color: var(--link-color);
+  }
+}
+
+/* 목록이 뜰 때 위에서부터 차례로 나타납니다 */
+@keyframes card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* fill-mode 는 반드시 backwards 여야 합니다.
+   both/forwards 로 두면 애니메이션이 끝난 뒤에도 transform 을 계속 점유해서
+   :hover 의 translateY 가 먹지 않습니다. */
+#post-list .card-wrapper {
+  animation: card-enter 0.42s ease backwards;
+}
+
+@for $i from 1 through 10 {
+  #post-list .card-wrapper:nth-child(#{$i}) {
+    animation-delay: #{($i - 1) * 0.045}s;
+  }
+}
+
+/* 사이드바 메뉴: 올려두면 살짝 밀려납니다.
+   padding 을 건드리면 테마가 breakpoint 마다 다른 기본값을 써서 어긋나므로
+   기본값에 의존하지 않는 transform 을 씁니다. */
+#sidebar .nav-link {
+  transition:
+    transform 0.18s ease,
+    color 0.18s ease;
+}
+
+#sidebar .nav-item:not(.active) .nav-link:hover {
+  transform: translateX(4px);
+}
+
+/* 아바타와 본문 이미지에는 손대지 않습니다.
+   테마가 이미 아바타 hover 확대(#sidebar #avatar img:hover)와
+   본문 이미지 클릭 확대(.popup, cursor: zoom-in)를 갖고 있어,
+   여기에 hover 변형을 얹으면 서로 덮어씁니다. */
+
+/* 태그 */
+.post-tag,
+#tags .tag {
+  transition:
+    transform 0.15s ease,
+    background-color 0.15s ease;
+
+  &:hover {
+    transform: translateY(-2px);
+  }
+}
+
+/* 상단 읽기 진행 바 — 지원하는 브라우저에서만 켜집니다 */
+@supports (animation-timeline: scroll()) {
+  @keyframes read-progress {
+    from {
+      transform: scaleX(0);
+    }
+    to {
+      transform: scaleX(1);
+    }
+  }
+
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0 0 auto;
+    z-index: 2000;
+    height: 2px;
+    background: var(--link-color);
+    transform: scaleX(0);
+    transform-origin: 0 50%;
+    animation: read-progress linear both;
+    animation-timeline: scroll(root block);
+    pointer-events: none;
+  }
+}
+
+/* 움직임을 줄이도록 설정한 사용자에게는 전부 끕니다 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  #post-list .card-wrapper:hover,
+  .post-tag:hover {
+    transform: none;
+  }
+}
