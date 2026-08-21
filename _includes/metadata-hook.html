@@ -94,3 +94,65 @@
     }
   })();
 </script>
+
+<!--
+  커서를 따라다니는 링.
+
+  마우스가 있는 기기에서만 만들고, 움직임을 줄이도록 설정한 사용자에게는 만들지
+  않습니다. 좌표는 rAF 루프에서 목표 지점으로 조금씩 다가가게 해(lerp) 살짝
+  늦게 따라오는 느낌을 냅니다.
+
+  주의: 프로덕션 빌드는 HTML을 한 줄로 압축하므로 블록 주석만 사용합니다.
+-->
+<script>
+  (function () {
+    if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    function start() {
+      var ring = document.createElement('div');
+      ring.id = 'cursor-ring';
+      ring.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(ring);
+
+      var x = 0, y = 0, targetX = 0, targetY = 0, seen = false;
+
+      document.addEventListener('pointermove', function (event) {
+        targetX = event.clientX;
+        targetY = event.clientY;
+        if (!seen) {
+          /* 첫 움직임에서는 순간이동시켜, 화면 구석에서 날아오지 않게 합니다. */
+          x = targetX;
+          y = targetY;
+          seen = true;
+          ring.classList.add('is-visible');
+        }
+        var hit = event.target instanceof Element
+          ? event.target.closest('a, button, .card-wrapper, .post-tag, #search-input')
+          : null;
+        ring.classList.toggle('is-active', !!hit);
+      }, { passive: true });
+
+      /* 창 밖으로 나가면 숨깁니다. */
+      document.addEventListener('mouseleave', function () {
+        ring.classList.remove('is-visible');
+      });
+      document.addEventListener('mouseenter', function () {
+        if (seen) ring.classList.add('is-visible');
+      });
+
+      (function loop() {
+        x += (targetX - x) * 0.2;
+        y += (targetY - y) * 0.2;
+        ring.style.transform = 'translate(' + x.toFixed(1) + 'px, ' + y.toFixed(1) + 'px)';
+        requestAnimationFrame(loop);
+      })();
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', start);
+    } else {
+      start();
+    }
+  })();
+</script>

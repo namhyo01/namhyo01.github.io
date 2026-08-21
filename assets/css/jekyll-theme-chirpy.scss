@@ -229,11 +229,11 @@ body,
    좌표는 metadata-hook.html 의 스크립트가 --mx / --my 로 넣어줍니다.
    마우스가 있는 기기에서만 켜집니다. */
 :root[data-bs-theme='light'] {
-  --spotlight: rgb(13 110 253 / 11%);
+  --spotlight: rgb(13 110 253 / 14%);
 }
 
 :root[data-bs-theme='dark'] {
-  --spotlight: rgb(138 180 248 / 15%);
+  --spotlight: rgb(138 180 248 / 20%);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -261,6 +261,43 @@ body,
       opacity: 1;
     }
   }
+}
+
+/* 커서를 따라다니는 링.
+   요소 생성과 좌표 갱신은 metadata-hook.html 의 스크립트가 맡습니다.
+   마우스가 있는 기기에서만 만들어집니다. */
+#cursor-ring {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 26px;
+  height: 26px;
+  margin: -13px 0 0 -13px;
+  border: 1.5px solid var(--link-color);
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 3000;
+  will-change: transform;
+  transition:
+    opacity 0.25s ease,
+    width 0.18s ease,
+    height 0.18s ease,
+    margin 0.18s ease,
+    background-color 0.18s ease;
+}
+
+#cursor-ring.is-visible {
+  opacity: 0.5;
+}
+
+/* 링크·버튼·카드 위에서는 커집니다 */
+#cursor-ring.is-active {
+  width: 42px;
+  height: 42px;
+  margin: -21px 0 0 -21px;
+  background-color: var(--spotlight);
+  opacity: 0.85;
 }
 
 /* 상단 읽기 진행 바 — 지원하는 브라우저에서만 켜집니다 */
@@ -304,7 +341,8 @@ body,
     transform: none;
   }
 
-  #post-list .card-wrapper::before {
+  #post-list .card-wrapper::before,
+  #cursor-ring {
     display: none;
   }
 }
