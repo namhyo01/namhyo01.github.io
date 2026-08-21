@@ -96,11 +96,11 @@
 </script>
 
 <!--
-  커서를 따라다니는 링.
+  마우스 인터랙션 묶음: 커서 링 · 트레일 · 클릭 물결 · 배경 오로라.
 
-  마우스가 있는 기기에서만 만들고, 움직임을 줄이도록 설정한 사용자에게는 만들지
-  않습니다. 좌표는 rAF 루프에서 목표 지점으로 조금씩 다가가게 해(lerp) 살짝
-  늦게 따라오는 느낌을 냅니다.
+  그리기는 전부 CSS 가 하고, 여기서는 좌표와 요소 생성만 맡습니다.
+  마우스가 있는 기기에서만 동작하고, 움직임을 줄이도록 설정한 사용자에게는
+  아무것도 만들지 않습니다.
 
   주의: 프로덕션 빌드는 HTML을 한 줄로 압축하므로 블록 주석만 사용합니다.
 -->
@@ -110,30 +110,66 @@
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
     function start() {
+      var body = document.body;
+
       var ring = document.createElement('div');
       ring.id = 'cursor-ring';
       ring.setAttribute('aria-hidden', 'true');
-      document.body.appendChild(ring);
+      body.appendChild(ring);
 
-      var x = 0, y = 0, targetX = 0, targetY = 0, seen = false;
+      var cursorX = 0, cursorY = 0;      /* 실제 커서 */
+      var ringX = 0, ringY = 0;          /* 링 (조금 늦게 따라옴) */
+      var auroraX = 0, auroraY = 0;      /* 오로라 (더 느리게 흐름) */
+      var seen = false;
+      var lastSpark = 0;
+      var tiltedCard = null;             /* 지금 기울어져 있는 카드 */
 
       document.addEventListener('pointermove', function (event) {
-        targetX = event.clientX;
-        targetY = event.clientY;
+        cursorX = event.clientX;
+        cursorY = event.clientY;
+
         if (!seen) {
-          /* 첫 움직임에서는 순간이동시켜, 화면 구석에서 날아오지 않게 합니다. */
-          x = targetX;
-          y = targetY;
+          /* 첫 움직임에서는 순간이동시켜 화면 구석에서 날아오지 않게 합니다. */
+          ringX = auroraX = cursorX;
+          ringY = auroraY = cursorY;
           seen = true;
           ring.classList.add('is-visible');
         }
+
         var hit = event.target instanceof Element
           ? event.target.closest('a, button, .card-wrapper, .post-tag, #search-input')
           : null;
         ring.classList.toggle('is-active', !!hit);
+
+        /* 트레일: 너무 촘촘하면 지저분해서 간격을 둡니다. */
+        var now = event.timeStamp;
+        if (now - lastSpark > 45) {
+          lastSpark = now;
+          spawn('cursor-spark', cursorX, cursorY, 600);
+        }
+
+        /* 카드 3D 틸트 */
+        var card = event.target instanceof Element
+          ? event.target.closest('#post-list .card-wrapper')
+          : null;
+        if (card !== tiltedCard) {
+          if (tiltedCard) {
+            tiltedCard.style.removeProperty('--tilt-x');
+            tiltedCard.style.removeProperty('--tilt-y');
+          }
+          tiltedCard = card;
+        }
+        if (card) {
+          var box = card.getBoundingClientRect();
+          var px = (cursorX - box.left) / box.width - 0.5;
+          var py = (cursorY - box.top) / box.height - 0.5;
+          card.style.setProperty('--tilt-y', (px * 6).toFixed(2) + 'deg');
+          card.style.setProperty('--tilt-x', (-py * 6).toFixed(2) + 'deg');
+          card.style.setProperty('--mx', (cursorX - box.left).toFixed(1) + 'px');
+          card.style.setProperty('--my', (cursorY - box.top).toFixed(1) + 'px');
+        }
       }, { passive: true });
 
-      /* 창 밖으로 나가면 숨깁니다. */
       document.addEventListener('mouseleave', function () {
         ring.classList.remove('is-visible');
       });
@@ -141,10 +177,39 @@
         if (seen) ring.classList.add('is-visible');
       });
 
+      document.addEventListener('click', function (event) {
+        spawn('click-ripple', event.clientX, event.clientY, 620);
+      }, { passive: true });
+
+      /* 짧게 살았다 사라지는 요소를 만듭니다. */
+      function spawn(className, x, y, life) {
+        var node = document.createElement('div');
+        node.className = className;
+        node.setAttribute('aria-hidden', 'true');
+        node.style.setProperty('--sx', x.toFixed(1) + 'px');
+        node.style.setProperty('--sy', y.toFixed(1) + 'px');
+        if (className === 'cursor-spark') {
+          /* 입자마다 다른 방향으로 조금씩 흩어지게 합니다. */
+          node.style.setProperty('--dx', (Math.random() * 26 - 13).toFixed(1) + 'px');
+          node.style.setProperty('--dy', (Math.random() * 26 - 13).toFixed(1) + 'px');
+        }
+        body.appendChild(node);
+        setTimeout(function () { node.remove(); }, life);
+      }
+
       (function loop() {
-        x += (targetX - x) * 0.2;
-        y += (targetY - y) * 0.2;
-        ring.style.transform = 'translate(' + x.toFixed(1) + 'px, ' + y.toFixed(1) + 'px)';
+        ringX += (cursorX - ringX) * 0.2;
+        ringY += (cursorY - ringY) * 0.2;
+        ring.style.transform = 'translate(' + ringX.toFixed(1) + 'px, ' + ringY.toFixed(1) + 'px)';
+
+        /* 오로라는 훨씬 느리게 따라와 배경이 천천히 흐르는 느낌을 냅니다. */
+        auroraX += (cursorX - auroraX) * 0.04;
+        auroraY += (cursorY - auroraY) * 0.04;
+        body.style.setProperty('--ax', auroraX.toFixed(0) + 'px');
+        body.style.setProperty('--ay', auroraY.toFixed(0) + 'px');
+        body.style.setProperty('--bx', (window.innerWidth - auroraX).toFixed(0) + 'px');
+        body.style.setProperty('--by', (window.innerHeight - auroraY).toFixed(0) + 'px');
+
         requestAnimationFrame(loop);
       })();
     }
