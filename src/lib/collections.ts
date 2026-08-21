@@ -18,3 +18,17 @@ export async function getProjects() {
 		return b.data.startDate.valueOf() - a.data.startDate.valueOf();
 	});
 }
+
+/** '알고리즘/dp' -> '알고리즘' */
+export const topCategory = (category: string) => category.split('/')[0];
+
+/** 대분류별 글 개수를 많은 순으로 반환합니다. */
+export async function getCategories() {
+	const posts = await getPosts();
+	const counts = new Map<string, number>();
+	for (const post of posts) {
+		const top = topCategory(post.data.category);
+		if (top) counts.set(top, (counts.get(top) ?? 0) + 1);
+	}
+	return [...counts].sort((a, b) => b[1] - a[1]).map(([name, count]) => ({ name, count }));
+}

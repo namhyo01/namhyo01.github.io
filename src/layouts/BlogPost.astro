@@ -6,10 +6,12 @@ import Footer from '../components/Footer.astro';
 import FormattedDate from '../components/FormattedDate.astro';
 import Header from '../components/Header.astro';
 import TagList from '../components/TagList.astro';
+import { topCategory } from '../lib/collections';
 
 type Props = CollectionEntry<'blog'>['data'];
 
-const { title, description, pubDate, updatedDate, heroImage, tags } = Astro.props;
+const { title, description, pubDate, updatedDate, heroImage, tags, category } = Astro.props;
+const top = topCategory(category);
 ---
 
 <html lang="ko">
@@ -57,6 +59,19 @@ const { title, description, pubDate, updatedDate, heroImage, tags } = Astro.prop
 				justify-content: center;
 				margin-bottom: 1.5em;
 			}
+			.category {
+				display: inline-block;
+				margin-bottom: 0.8em;
+				font-size: 0.8rem;
+			}
+			.category a {
+				color: rgb(var(--gray));
+				text-decoration: none;
+			}
+			.category a:hover {
+				color: var(--accent);
+				text-decoration: underline;
+			}
 		</style>
 	</head>
 
@@ -69,6 +84,13 @@ const { title, description, pubDate, updatedDate, heroImage, tags } = Astro.prop
 				</div>
 				<div class="prose">
 					<div class="title">
+						{
+							top && (
+								<div class="category">
+									<a href={`/blog/category/${encodeURIComponent(top)}/`}>{category}</a>
+								</div>
+							)
+						}
 						<div class="date">
 							<FormattedDate date={pubDate} />
 							{

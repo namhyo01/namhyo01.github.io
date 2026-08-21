@@ -1,0 +1,57 @@
+---
+import { getCategories } from '../lib/collections';
+
+interface Props {
+	/** 현재 선택된 대분류. 없으면 '전체'가 활성화됩니다. */
+	active?: string;
+	total: number;
+}
+
+const { active, total } = Astro.props;
+const categories = await getCategories();
+---
+
+<nav class="cats">
+	<a href="/blog" class={active ? '' : 'active'}>전체 <span>{total}</span></a>
+	{
+		categories.map((c) => (
+			<a href={`/blog/category/${encodeURIComponent(c.name)}/`} class={c.name === active ? 'active' : ''}>
+				{c.name} <span>{c.count}</span>
+			</a>
+		))
+	}
+</nav>
+
+<style>
+	.cats {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4em;
+		margin-bottom: 2.5em;
+	}
+	.cats a {
+		padding: 0.25em 0.85em;
+		border: 1px solid rgba(var(--gray), 25%);
+		border-radius: 999px;
+		color: rgb(var(--gray-dark));
+		font-size: 0.85rem;
+		text-decoration: none;
+		white-space: nowrap;
+	}
+	.cats a:hover {
+		border-color: var(--accent);
+		color: var(--accent);
+	}
+	.cats a.active {
+		border-color: var(--accent);
+		background: var(--accent);
+		color: white;
+	}
+	.cats a span {
+		color: rgb(var(--gray));
+		font-size: 0.75em;
+	}
+	.cats a.active span {
+		color: rgba(255, 255, 255, 70%);
+	}
+</style>

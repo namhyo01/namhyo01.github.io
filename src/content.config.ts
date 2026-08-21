@@ -14,7 +14,11 @@ const blog = defineCollection({
 			pubDate: z.coerce.date(),
 			updatedDate: z.coerce.date().optional(),
 			heroImage: z.optional(image()),
+			// '알고리즘/dp' 처럼 '대분류/소분류' 형태를 씁니다.
+			category: z.string().default(''),
 			tags: z.array(z.string()).default([]),
+			// 티스토리에서 옮겨온 글의 원본 글 번호 (namhyo00.tistory.com/{id})
+			tistoryId: z.number().optional(),
 			// true면 빌드 결과물에서 제외됩니다.
 			draft: z.boolean().default(false),
 		}),
