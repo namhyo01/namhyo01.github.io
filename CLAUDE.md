@@ -43,17 +43,38 @@ Ruby가 로컬에 없습니다. Docker로 빌드하세요 (명령은 README.md �
 배포 워크플로가 `htmlproofer`로 내부 링크를 검사하므로, **링크가 깨지면 배포가 실패합니다**.
 push 전에 같은 검사를 돌려보는 편이 안전합니다.
 
-## PWA 캐시는 꺼둔 상태입니다
+## 서비스 워커는 완전히 꺼둔 상태입니다
 
-`_config.yml` 의 `pwa.cache.enabled: false`. **다시 켜지 마세요.** 켜면 서비스 워커가
-`/`, `/categories/`, `/tags/`, `/archives/`, `/portfolio/`, `/about/` 를 **캐시 우선**으로
-서빙해서, 배포해도 방문자에게는 예전 화면이 그대로 보입니다. 또 캐시 이름이
-`chirpy-<빌드시각>` 이라 배포할 때마다 새 워커가 생겨 '새 콘텐츠가 있습니다' 팝업이
-매번 뜹니다.
+`_config.yml` 의 `pwa.cache.enabled` 는 **빈 값**입니다. `false` 라고 적으면 안 됩니다.
+`_includes/head.html` 이 이렇게 렌더링하기 때문입니다.
 
-`pwa.enabled` 는 `true` 로 둬야 합니다. `false` 로 하면 워커 등록 스크립트 자체가
-사라져서, 이미 워커를 설치한 방문자는 낡은 캐시에서 빠져나올 방법이 없어집니다.
-`cache.enabled: false` 여야 `swconf` 가 `purge: true` 가 되어 기존 캐시를 지웁니다.
+```
+app.min.js?register={{ site.pwa.cache.enabled }}
+```
+
+`false` 로 적으면 `register=false` 가 되는데, `app.min.js` 는 `if (param)` 로만 검사하므로
+**문자열 "false" 가 참으로 평가되어 서비스 워커가 그대로 등록됩니다.** 빈 값이어야
+`register=` 가 되어 등록 블록을 건너뜁니다.
+
+`pwa.enabled` 는 `true` 로 둬야 합니다. `false` 로 하면 `notification.html` 이 빠지는데,
+`register` 가 참이면 `app.min.js` 가 `document.getElementById('notification')` 의 결과에
+`.querySelector()` 를 호출해 TypeError 가 납니다.
+
+`_includes/metadata-hook.html` 에 기존 워커를 해제하는 스크립트가 있습니다. 워커
+스크립트 자체는 내용이 바뀌지 않아 브라우저가 알아서 갱신하지 않기 때문에,
+이미 설치된 방문자를 위해 직접 지워줘야 합니다. **지우지 마세요.**
+
+서비스 워커를 켜두면 생기는 일: 배포해도 방문자에게 예전 화면이 계속 보이고,
+'새 콘텐츠가 있습니다' 팝업이 매번 뜹니다.
+
+## 댓글
+
+giscus(GitHub Discussions) 를 씁니다. 댓글은 이 저장소의 Discussions
+`Announcements` 카테고리에 쌓이고, `mapping: pathname` 이라 글 URL 하나당
+Discussion 하나가 생깁니다. **글의 URL(파일명 slug)을 바꾸면 그 글에 달린 댓글과
+연결이 끊깁니다.** 옮길 일이 있으면 Discussion 제목도 같이 고쳐야 합니다.
+
+동작하려면 저장소에 giscus GitHub App 이 설치되어 있어야 합니다.
 
 ## 배포
 

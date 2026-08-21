@@ -103,10 +103,12 @@
           {%- unless site.social.email -%}
             {%- continue -%}
           {%- endunless -%}
-          {%- assign email = site.social.email | split: '@' -%}
-          {%- capture url -%}
-            javascript:void(location.href = 'mailto:' + ['{{ email[0] }}','{{ email[1] }}'].join('@'))
-          {%- endcapture -%}
+          {%- comment -%}
+            테마 기본값은 스크래핑을 막으려고 javascript:void(...) 를 씁니다. 그러면
+            우클릭 '이메일 주소 복사'와 가운데 클릭이 막히고, javascript: URL 을
+            차단하는 환경에서는 아예 동작하지 않습니다. 평범한 mailto 로 둡니다.
+          {%- endcomment -%}
+          {%- capture url -%}mailto:{{ site.social.email }}{%- endcapture -%}
         {% when 'rss' %}
           {% assign url = '/feed.xml' | relative_url %}
         {% else %}

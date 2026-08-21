@@ -66,3 +66,31 @@
     document.addEventListener('pointermove', track, { passive: true });
   })();
 </script>
+
+<!--
+  예전에 설치된 서비스 워커를 제거합니다.
+
+  PWA 캐시를 끄기 전에 방문한 사람들의 브라우저에는 페이지와 CSS를 캐시 우선으로
+  서빙하는 워커가 남아 있습니다. 그대로 두면 아무리 배포해도 예전 화면이 보이고
+  '새 콘텐츠가 있습니다' 팝업이 계속 뜹니다. 워커 스크립트 자체는 내용이 바뀌지
+  않아 브라우저가 알아서 갱신하지도 않으므로, 여기서 직접 등록을 해제합니다.
+
+  새 등록은 _config.yml 의 pwa.cache.enabled 를 비워 막아 두었습니다.
+
+  주의: 프로덕션 빌드는 HTML을 한 줄로 압축하므로 블록 주석만 사용합니다.
+-->
+<script>
+  (function () {
+    if (!('serviceWorker' in navigator)) return;
+
+    navigator.serviceWorker.getRegistrations().then(function (regs) {
+      regs.forEach(function (reg) { reg.unregister(); });
+    }).catch(function () { /* 지원하지 않는 환경은 조용히 넘어갑니다 */ });
+
+    if (window.caches && caches.keys) {
+      caches.keys().then(function (keys) {
+        keys.forEach(function (key) { caches.delete(key); });
+      }).catch(function () {});
+    }
+  })();
+</script>
