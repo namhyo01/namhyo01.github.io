@@ -122,7 +122,7 @@ topic은 같은 것을 바라보게 했습니다. A가 읽고 있을 때 B도 �
 - 다만 Spring Boot 3.0 이상에서 Security 버전도 올라가면서 기존 참고 자료와 충돌이 많았습니다. 바뀐 공식 문서를 보며 전체 흐름에 맞춰 도입했습니다.
 - 회원가입이 되어 있는 경우 access 토큰과 refresh 토큰을 쿠키에 담아 보내 토큰 기반 인증을 처리했습니다.
 
-[GitHub](https://github.com/orgs/swm-nodriversomabus/repositories) · [상세 노션](https://mighty-eyelash-a8a.notion.site/p/bdb1b1eab47e43b9997bbe1131bd72d5?pvs=25)
+[GitHub에서 보기](https://github.com/orgs/swm-nodriversomabus/repositories)
 
 ---
 
@@ -171,4 +171,4 @@ GitHub의 멘션에서 영감을 받아, 사용자의 follow/following 리스트
 - `CacheManager`를 기반으로 `CacheInterceptor`를 상속해, userId별 캐싱이 필요한 경우 key에 **url + userId**를 넣도록 오버라이딩했습니다. update가 발생하면 캐시를 지워야 하므로 **캐시 삭제 데코레이터**도 만들었습니다.
 - 그 결과 멘션 리스트를 가져오는 시간이 두 번째 호출부터 **800ms → 60ms**로 줄었습니다.
 
-[GitHub](https://github.com/boostcampwm-2022/web34-moheyum/tree/main) · [상세 노션](https://mighty-eyelash-a8a.notion.site/p/4c54f7ce6bc348bd84121578d4079b50)
+[GitHub에서 보기](https://github.com/boostcampwm-2022/web34-moheyum/tree/main)
