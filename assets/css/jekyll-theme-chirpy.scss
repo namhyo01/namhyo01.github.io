@@ -225,6 +225,44 @@ body,
   }
 }
 
+/* 카드 위에서 마우스를 따라다니는 광원.
+   좌표는 metadata-hook.html 의 스크립트가 --mx / --my 로 넣어줍니다.
+   마우스가 있는 기기에서만 켜집니다. */
+:root[data-bs-theme='light'] {
+  --spotlight: rgb(13 110 253 / 11%);
+}
+
+:root[data-bs-theme='dark'] {
+  --spotlight: rgb(138 180 248 / 15%);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  #post-list .card-wrapper {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+
+    &::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      border-radius: inherit;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      background: radial-gradient(
+        18rem circle at var(--mx, 50%) var(--my, 50%),
+        var(--spotlight, transparent),
+        transparent 60%
+      );
+    }
+
+    &:hover::before {
+      opacity: 1;
+    }
+  }
+}
+
 /* 상단 읽기 진행 바 — 지원하는 브라우저에서만 켜집니다 */
 @supports (animation-timeline: scroll()) {
   @keyframes read-progress {
@@ -264,5 +302,9 @@ body,
   #post-list .card-wrapper:hover,
   .post-tag:hover {
     transform: none;
+  }
+
+  #post-list .card-wrapper::before {
+    display: none;
   }
 }

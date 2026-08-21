@@ -43,9 +43,24 @@ Ruby가 로컬에 없습니다. Docker로 빌드하세요 (명령은 README.md �
 배포 워크플로가 `htmlproofer`로 내부 링크를 검사하므로, **링크가 깨지면 배포가 실패합니다**.
 push 전에 같은 검사를 돌려보는 편이 안전합니다.
 
+## PWA 캐시는 꺼둔 상태입니다
+
+`_config.yml` 의 `pwa.cache.enabled: false`. **다시 켜지 마세요.** 켜면 서비스 워커가
+`/`, `/categories/`, `/tags/`, `/archives/`, `/portfolio/`, `/about/` 를 **캐시 우선**으로
+서빙해서, 배포해도 방문자에게는 예전 화면이 그대로 보입니다. 또 캐시 이름이
+`chirpy-<빌드시각>` 이라 배포할 때마다 새 워커가 생겨 '새 콘텐츠가 있습니다' 팝업이
+매번 뜹니다.
+
+`pwa.enabled` 는 `true` 로 둬야 합니다. `false` 로 하면 워커 등록 스크립트 자체가
+사라져서, 이미 워커를 설치한 방문자는 낡은 캐시에서 빠져나올 방법이 없어집니다.
+`cache.enabled: false` 여야 `swconf` 가 `purge: true` 가 되어 기존 캐시를 지웁니다.
+
 ## 배포
 
 `main`에 push → `.github/workflows/pages-deploy.yml`이 빌드·검사 후 GitHub Pages에 배포.
+
+배포 직후 브라우저에 이전 화면이 보이면 서비스 워커/HTTP 캐시 때문입니다.
+`Ctrl+Shift+R` 로 확인하고, 자동화 검증은 새 브라우저 컨텍스트에서 하세요.
 
 ## 이전 이력
 

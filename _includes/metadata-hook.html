@@ -34,3 +34,35 @@
     else if (media.addListener) { media.addListener(apply); }
   })();
 </script>
+
+<!--
+  글 카드 위에서 마우스를 따라다니는 광원의 좌표를 넘겨줍니다.
+  실제 그리기는 CSS(.card-wrapper::before)가 하고, 여기서는 --mx / --my 만 갱신합니다.
+
+  주의: 프로덕션 빌드는 HTML을 한 줄로 압축하므로 블록 주석만 사용합니다.
+-->
+<script>
+  (function () {
+    if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    var pending = null;
+
+    function track(event) {
+      var card = event.target instanceof Element
+        ? event.target.closest('#post-list .card-wrapper')
+        : null;
+      if (!card) return;
+      if (pending) return;
+      /* 포인터 이벤트는 초당 수백 번 오므로 프레임당 한 번만 반영합니다. */
+      pending = requestAnimationFrame(function () {
+        pending = null;
+        var box = card.getBoundingClientRect();
+        card.style.setProperty('--mx', (event.clientX - box.left).toFixed(1) + 'px');
+        card.style.setProperty('--my', (event.clientY - box.top).toFixed(1) + 'px');
+      });
+    }
+
+    document.addEventListener('pointermove', track, { passive: true });
+  })();
+</script>
