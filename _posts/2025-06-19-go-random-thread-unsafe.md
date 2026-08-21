@@ -59,13 +59,9 @@ Random에서 0에서 99 사이의 값이 나오게 하고 +1을 하여 1~100의 
 
 ### 자료조사
 
-<https://github.com/golang/go/issues/3611>
+[math/rand: document that math.Rand is not safe for concurrent use · Issue #3611 · golang/go](https://github.com/golang/go/issues/3611)
 
-[math/rand: document that math.Rand is not safe for concurrent use · Issue #3611 · golang/go
-
-by gar3ts: I have a project that as an aside calls rand.Intn() many times with different values. My project frequently causes rng.Int63() to panic due to an out of range index: math/rand.(\*rngSourc...
-
-github.com](<https://github.com/golang/go/issues/3611>)
+> by gar3ts: I have a project that as an aside calls rand.Intn() many times with different values. My project frequently causes rng.Int63() to panic due to an out of range index: math/rand.(\*rngSourc...
 
 음??  
 Random() 함수가 thread unsafe할 수가 있나?  
