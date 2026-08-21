@@ -4,28 +4,63 @@ icon: fas fa-info-circle
 order: 5
 ---
 
-## 안녕하세요
+안녕하세요. **공유와 소통을 중요시하는 백엔드 개발자 김남효**입니다.
 
-여기에 한 줄 소개를 적어주세요. 이 페이지는 아직 초안입니다 — 어떤 일을 해왔고, 무엇에 관심이 있고, 어떤 방식으로 일하는지를 적어두면 포트폴리오로서 가장 먼저 읽히는 곳이 됩니다.
+다른 사람의 말을 듣는 것을 좋아합니다. 좋은 것이라 판단되면 실천으로 옮기려 노력합니다.
+문서로 정리하는 일이 공부에 도움이 된다고 생각해서, 배운 것들을 이렇게 기록하고 있습니다.
 
-## 이런 걸 합니다
+## Contact
 
-- 관심 분야나 주로 다루는 기술을 적어주세요.
-- 최근에 파고들고 있는 주제를 적어주세요.
-- 앞으로 해보고 싶은 것을 적어주세요.
+| | |
+| --- | --- |
+| 이메일 | [namhyo01@gmail.com](mailto:namhyo01@gmail.com) |
+| GitHub | [github.com/namhyo01](https://github.com/namhyo01) |
+| 이전 블로그 | [namhyo00.tistory.com](https://namhyo00.tistory.com/) |
 
-## 경험
+## Skill
 
-| 기간 | 소속 / 역할 | 한 일 |
-| --- | --- | --- |
-| 2024 – 현재 | 소속 / 역할 | 한 줄로 |
-| 2022 – 2024 | 소속 / 역할 | 한 줄로 |
+**Backend**
+: Go (Gin) · Spring Boot · NestJS · Express
 
-## 이 블로그
+**Language**
+: Go · Java · Kotlin · JavaScript · Python · Dart
 
-2022년 말부터 [티스토리](https://namhyo00.tistory.com/)에 쓰던 글 84개를 옮겨왔습니다. 옮긴 과정은 [티스토리에서 이사했습니다](/posts/moving-from-tistory/)에 적어두었습니다.
+**Data**
+: MySQL · MongoDB · Redis · Kafka
 
-## 연락
+**Infra**
+: AWS · Docker · Jenkins · Signoz · Datadog
 
-- GitHub — [namhyo01](https://github.com/namhyo01)
-- Email — [namhyo01@gmail.com](mailto:namhyo01@gmail.com)
+**Mobile**
+: Flutter
+
+## Education
+
+### 중앙대학교 소프트웨어학과
+
+**2016.03 ~ 2023.02** · 졸업
+
+## Experience
+
+### SW마에스트로 14기
+
+**2023.03 ~**
+
+혼자 여행가는 사람들을 위한 맞춤 매칭 애플리케이션을 팀 프로젝트로 개발했습니다.
+백엔드와 인프라를 담당했습니다.
+
+- 채팅 서버 (STOMP + Kafka)
+- 로그인 및 회원 정보 관리
+- CI/CD
+- AWS 인프라 구축
+
+자세한 내용은 [Portfolio](/portfolio/)에 정리했습니다.
+
+### 네이버 커넥트재단 부스트캠프 웹・모바일 7기
+
+**챌린지 과정** — 2022.07.18 ~ 2022.08.12
+: CS를 학습하고 JavaScript로 직접 구현하며 기초를 다졌습니다.
+
+**멤버십 과정** — 2022.08.31 ~ 2022.12.16
+: 학습 스프린트 8주 동안 HTML/CSS와 비동기 제어 같은 기초부터 React, NestJS, 배포와 CI/CD까지 다뤘고,
+이어지는 그룹 프로젝트 6주 동안 [MO:HEYUM](/portfolio/)을 개발했습니다.
