@@ -39,7 +39,9 @@ begin
   end
 
   unless res.is_a?(Net::HTTPSuccess)
-    write([], "API #{res.code} 응답, 건너뜀")
+    # 실패 원인을 알 수 있게 본문 앞부분을 같이 남깁니다.
+    body = res.body.to_s.gsub(/\s+/, ' ').strip[0, 200]
+    write([], "API #{res.code} 응답, 건너뜀 | #{uri} | #{body}")
     exit 0
   end
 
