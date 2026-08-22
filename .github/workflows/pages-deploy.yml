@@ -45,6 +45,13 @@ jobs:
           ruby-version: 3.4
           bundler-cache: true
 
+      # GoatCounter 에서 조회수 상위 글을 받아 _data/popular.yml 로 저장합니다.
+      # 시크릿이 없으면 빈 목록을 쓰고 넘어가므로 빌드는 그대로 진행됩니다.
+      - name: Fetch popular posts
+        env:
+          GOATCOUNTER_TOKEN: ${{ secrets.GOATCOUNTER_TOKEN }}
+        run: ruby tools/fetch-popular.rb
+
       - name: Build site
         run: bundle exec jekyll b -d "_site${{ steps.pages.outputs.base_path }}"
         env:

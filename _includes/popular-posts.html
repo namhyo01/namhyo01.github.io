@@ -1,0 +1,34 @@
+<!--
+  조회수 상위 글 패널.
+
+  데이터는 tools/fetch-popular.rb 가 빌드 전에 GoatCounter API 에서 받아
+  _data/popular.yml 로 저장합니다. 토큰이 없거나 수집에 실패하면 목록이
+  비고, 이 패널은 렌더링되지 않습니다.
+-->
+{% assign popular = site.data.popular | default: '' %}
+
+{% if popular != '' and popular.size > 0 %}
+  {% assign resolved = '' | split: '' %}
+
+  {% for item in popular %}
+    {% assign match = site.posts | where: 'url', item.path | first %}
+    {% if match %}
+      {% assign resolved = resolved | push: item %}
+    {% endif %}
+  {% endfor %}
+
+  {% if resolved.size > 0 %}
+    <section id="access-popular">
+      <h2 class="panel-heading">조회수 많은 글</h2>
+      <ul class="content list-unstyled ps-0 pb-1 ms-1 mt-2">
+        {% for item in resolved %}
+          {% assign post = site.posts | where: 'url', item.path | first %}
+          <li class="text-truncate lh-lg">
+            <a href="{{ post.url | relative_url }}">{{ post.title }}</a>
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
+    <!-- #access-popular -->
+  {% endif %}
+{% endif %}

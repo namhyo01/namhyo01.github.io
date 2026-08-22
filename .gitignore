@@ -33,3 +33,6 @@ Thumbs.db
 
 # playwright mcp 임시 출력
 .playwright-mcp/
+
+# 빌드 때 GoatCounter 에서 새로 받아 덮어씁니다 (tools/fetch-popular.rb)
+_data/popular.yml
