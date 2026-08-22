@@ -108,6 +108,22 @@ curl -s -o /dev/null -w "%{http_code}\n" \
 # 200 이면 정상, 403 이면 위 설정이 꺼져 있음
 ```
 
+## 커밋 계정
+
+이 저장소는 `git config user.email` 이
+**`34156840+namhyo01@users.noreply.github.com`** 로 설정돼 있습니다. **바꾸지 마세요.**
+
+GitHub 은 커밋의 author 이메일이 계정에 등록된 주소와 일치할 때만 그 커밋을
+사용자에게 귀속시키고 잔디에 반영합니다. `namhyo01@gmail.com` 은 계정에 등록돼
+있지 않아서, 이 주소로 커밋하면 `author.login` 이 비고 기여도에 잡히지 않습니다.
+
+확인 방법:
+
+```bash
+gh api "repos/namhyo01/namhyo01.github.io/commits?per_page=5" \
+  --jq '.[] | "\(.sha[:7]) \(.author.login // "미귀속") \(.commit.author.email)"'
+```
+
 ## 배포
 
 `main`에 push → `.github/workflows/pages-deploy.yml`이 빌드·검사 후 GitHub Pages에 배포.
