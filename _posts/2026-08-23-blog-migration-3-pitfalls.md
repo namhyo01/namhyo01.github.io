@@ -17,7 +17,7 @@ description: "배포했는데 화면이 안 바뀌고, false로 껐는데 켜져
 > 1. [왜 옮겼고, 무엇을 골랐나](/posts/blog-migration-1-why-and-what/)
 > 2. [글 84개를 옮기며 만든 변환기](/posts/blog-migration-2-converter/)
 > 3. **배포하고 나서 만난 함정들** ← 지금 글
-> 4. 댓글 · 조회수 · 인기글 붙이기
+> 4. [댓글 · 조회수 · 인기글 붙이기](/posts/blog-migration-4-comments-and-stats/)
 {: .prompt-info }
 
 ## 1. 배포했는데 화면이 안 바뀐다
