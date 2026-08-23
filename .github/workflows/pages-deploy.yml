@@ -9,6 +9,12 @@ on:
       - README.md
       - LICENSE
 
+  # 조회수 순위(_data/popular.yml)를 매일 새로 받기 위해 하루 한 번 돕니다.
+  # cron 은 UTC 기준이라 18:00 UTC = 다음날 03:00 KST 입니다.
+  # GoatCounter 카운터 응답이 최대 4시간 캐시되므로 하루 한 번이면 충분합니다.
+  schedule:
+    - cron: "0 18 * * *"
+
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 

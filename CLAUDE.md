@@ -124,9 +124,30 @@ gh api "repos/namhyo01/namhyo01.github.io/commits?per_page=5" \
   --jq '.[] | "\(.sha[:7]) \(.author.login // "미귀속") \(.commit.author.email)"'
 ```
 
+## 조회수 순위 패널
+
+우측 패널의 '조회수 많은 글'은 `tools/fetch-popular.rb` 가 빌드 전에
+GoatCounter API(`/api/v0/stats/hits`)를 호출해 `_data/popular.yml` 로 굽습니다.
+
+- 토큰은 저장소 시크릿 **`GOATCOUNTER_TOKEN`** 입니다. 브라우저에 노출되지 않습니다.
+- 토큰이 없거나 API 가 실패하면 **빈 목록을 쓰고 정상 종료**합니다. 통계 때문에
+  배포가 막히면 안 됩니다. 목록이 비면 패널은 렌더링되지 않습니다.
+- `_data/popular.yml` 은 빌드마다 덮어써지므로 `.gitignore` 에 있습니다.
+  로컬 빌드가 깨지지 않도록 빈 파일만 강제로 커밋해 두었습니다.
+- 패널은 `_includes/update-list.html` 끝에서 `popular-posts.html` 을 include 합니다.
+  `.access` 블록이 update-list → trending-tags 순으로 조립되는데 그 사이에 훅이
+  없어서입니다. `_layouts/default.html` 을 통째로 덮어쓰지 않으려고 택한 방법입니다.
+- 범위와 개수는 환경변수로 조절합니다: `GOATCOUNTER_DAYS`(기본 365),
+  `GOATCOUNTER_TOP`(기본 5).
+
 ## 배포
 
 `main`에 push → `.github/workflows/pages-deploy.yml`이 빌드·검사 후 GitHub Pages에 배포.
+
+매일 18:00 UTC(다음날 03:00 KST)에 cron 으로도 한 번 돕니다. 글을 쓰지 않아도
+조회수 순위가 갱신되게 하기 위해서입니다. **GitHub 은 60일간 활동이 없는 저장소의
+예약 워크플로를 자동으로 중지**하므로, 오래 손대지 않으면 Actions 탭에서 다시
+켜야 할 수 있습니다.
 
 배포 직후 브라우저에 이전 화면이 보이면 서비스 워커/HTTP 캐시 때문입니다.
 `Ctrl+Shift+R` 로 확인하고, 자동화 검증은 새 브라우저 컨텍스트에서 하세요.
