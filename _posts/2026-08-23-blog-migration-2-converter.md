@@ -13,7 +13,7 @@ description: "만료되는 이미지 URL, Go 코드에 붙은 angelscript, 제�
 >
 > 1. [왜 옮겼고, 무엇을 골랐나](/posts/blog-migration-1-why-and-what/)
 > 2. **글 84개를 옮기며 만든 변환기** ← 지금 글
-> 3. 배포하고 나서 만난 함정들
+> 3. [배포하고 나서 만난 함정들](/posts/blog-migration-3-pitfalls/)
 > 4. 댓글 · 조회수 · 인기글 붙이기
 {: .prompt-info }
 
