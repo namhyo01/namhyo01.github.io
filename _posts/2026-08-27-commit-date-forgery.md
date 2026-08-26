@@ -239,6 +239,96 @@ gh api -X PUT "repos/$R/contents/.gitignore" \
 없었습니다. 그 SHA 를 아는 사람이 아무도 없습니다. 다행히 전부 병합된 브랜치라
 코드는 main 에 남아 있고, 잃은 건 위치 정보뿐입니다.
 
+## 그래서 뭘 켜둬야 할까
+
+이번 일이 몇 달 동안 안 들킨 건 누가 게을러서가 아닙니다. **git 이 원래
+알려주지 않기 때문**입니다. 강제 push 는 정상 기능이고, 커밋 목록은 커밋에 적힌
+날짜순으로 정렬되니 날짜를 옛날로 맞춰두면 목록 아래로 묻힙니다. 끝난 프로젝트는
+아무도 watch 하지 않으니 알림이 갈 곳도 없습니다.
+
+발견 경로가 "누군가 우연히 열어본다" 하나뿐이었던 겁니다. 그래서 **감지는 사람이
+아니라 규칙이 해야 합니다.**
+
+### 1. 끝난 저장소는 archive
+
+효과가 제일 크고 비용이 0입니다. archive 하면 저장소가 읽기 전용이 되어
+**push 자체가 거부됩니다.** 계정이 털려도 손댈 수 없습니다.
+
+```bash
+gh api -X PATCH repos/OWNER/REPO -F archived=true
+```
+
+몇 년 전에 끝나고 아무도 안 건드리는 저장소가 여러 개라면, 이것부터입니다.
+다시 열려면 `archived=false` 로 되돌리면 됩니다.
+
+### 2. 강제 push 와 미서명 커밋을 거부
+
+Ruleset 으로 막습니다.
+
+```bash
+gh api -X POST repos/OWNER/REPO/rulesets --input - <<'JSON'
+{
+  "name": "protect-history",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": { "ref_name": { "include": ["~ALL"], "exclude": [] } },
+  "rules": [
+    { "type": "non_fast_forward" },
+    { "type": "required_signatures" }
+  ]
+}
+JSON
+```
+
+- `non_fast_forward` — **강제 push 거부.** 브랜치를 통째로 덮는 짓이 불가능해집니다
+- `required_signatures` — **서명 없는 커밋 거부.** 남의 커밋을 `--amend` 로 고쳐
+  올리는 경로가 막힙니다
+
+public 저장소면 무료 요금제에서도 됩니다.
+
+### 3. 강제 push 알림
+
+GitHub 이 보내는 push 웹훅에는 이런 필드가 들어 있습니다.
+
+```json
+{ "ref": "refs/heads/main", "forced": true, "before": "48efe95", "after": "..." }
+```
+
+**`forced: true` 만 걸러서 알림을 보내면 됩니다.** 코드 몇 줄이고 무료입니다.
+게다가 `before` 에 **덮이기 전 커밋 SHA** 가 담겨 옵니다. 이번에 제가 브랜치
+6개의 원래 위치를 못 되살렸는데, 이게 켜져 있었다면 그 값이 로그에 남아
+있었을 겁니다.
+
+### 4. 옛날 clone 이 증거다
+
+이건 설정이 아니라 사실 하나입니다. **로컬 `.git` 은 원격이 바뀌어도 따라
+바뀌지 않습니다.** 몇 년 전에 받아둔 폴더가 있다면, 거기 원본이 그대로 있습니다.
+
+```bash
+git fetch origin
+git log --oneline origin/main..HEAD   # 내 로컬에만 있는 커밋
+git log --oneline HEAD..origin/main   # 원격에만 있는 커밋
+```
+
+원격에 없던 게 내 쪽에 있거나 SHA 가 어긋나면, **로컬 쪽이 원본**입니다.
+반대로 말하면 clone 을 갖고 있는 사람은 이 명령 두 줄로 조작 여부를 몇 초 만에
+알 수 있습니다.
+
+> 단, 앞에서 말한 `folderOpen` 때문에 **그 폴더를 편집기로 열지는 마세요.**
+> 터미널에서 `git -C <경로> ...` 로만 확인합니다.
+{: .prompt-warning }
+
+### 조직 전체를 훑을 때
+
+저장소가 많으면 하나씩 열어볼 수 없습니다. `pushed_at` 으로 한 번에 봅니다.
+
+```bash
+gh api "orgs/ORG/repos?per_page=100"   --jq '.[] | select(.pushed_at > "2026-06-01") | "\(.pushed_at[:10])  \(.name)"' | sort
+```
+
+**커밋 날짜가 아니라 `pushed_at` 으로 정렬하는 게 핵심입니다.** 앞에서 본 것처럼
+커밋 날짜는 위조되지만 이건 안 됩니다.
+
 ## 남은 생각
 
 기술적으로 대단한 공격은 아니었습니다. `--amend` 와 날짜 환경변수, 강제 push.
@@ -259,6 +349,8 @@ gh api -X PUT "repos/$R/contents/.gitignore" \
 - **확장자는 이름일 뿐이다.** `.woff2` 라도 `node` 에 넘기면 코드다.
 - **서명은 조작을 드러낸다.** 커밋 서명을 켜두면, 내용이 바뀔 때 `Verified` 가
   사라진다. 다만 저장소 전체가 서명돼 있어야 신호가 산다.
+- **감지는 규칙이 해야 한다.** 사람이 하나씩 열어보는 건 저장소가 몇 개만 넘어가도
+  안 된다. archive 와 ruleset 은 설정 한 줄이고 되돌릴 수 있다.
 
 한동안 안 들여다본 저장소가 있다면, `pushed_at` 한 번 찍어보시기를 권합니다.
 명령 하나면 됩니다.
