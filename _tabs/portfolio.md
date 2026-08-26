@@ -86,3 +86,7 @@ TV 사업본부 광고 플랫폼 개발팀에서 LG TV의 Home 화면을 비롯�
 - **Redis 캐싱** — 멘션 리스트 응답을 **800ms → 60ms**로 단축
 
 [자세히 보기](/posts/project-moheyum/) · [GitHub](https://github.com/boostcampwm-2022/web34-moheyum/tree/main)
+
+> 저장소가 속한 조직에서 보안 점검이 진행 중입니다. 점검이 끝날 때까지 코드를
+> 내려받는 것은 권하지 않습니다.
+{: .prompt-warning }
