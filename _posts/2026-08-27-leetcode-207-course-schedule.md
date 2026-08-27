@@ -133,6 +133,44 @@ bool canFinish(int numCourses, vector<vector<int>>& prerequisites) {
 ✗ 성능: 314ms — 너무 느림 (같은 정점을 여러 번 다시 타고 있을 가능성)
 ```
 
+### DFS 로 짜면 이렇게 된다
+
+```cpp
+class Solution {
+    vector<vector<int>> graph;
+    vector<int> state;                 // 0 안 봄 / 1 지금 따라가는 중 / 2 다 봄
+
+    // u 에서 출발해 사이클을 만나지 않으면 true
+    bool dfs(int u) {
+        state[u] = 1;                  // 스택에 올린다
+        for (int v : graph[u]) {
+            if (state[v] == 1) return false;   // 따라가던 길로 되돌아왔다 = 사이클
+            if (state[v] == 0 && !dfs(v)) return false;
+            // state[v] == 2 면 이미 확인이 끝난 곳이므로 그냥 건너뛴다
+        }
+        state[u] = 2;                  // 스택에서 내린다
+        return true;
+    }
+
+public:
+    bool canFinish(int numCourses, vector<vector<int>>& prerequisites) {
+        graph.assign(numCourses, {});
+        state.assign(numCourses, 0);
+        for (const auto& p : prerequisites)
+            graph[p[1]].push_back(p[0]);       // b -> a (진입차수 방식과 같은 방향)
+
+        for (int i = 0; i < numCourses; ++i)
+            if (state[i] == 0 && !dfs(i)) return false;
+        return true;
+    }
+};
+```
+
+`state[u] = 1` 로 올렸다가 `state[u] = 2` 로 내리는 게 백트래킹이다.
+[79. Word Search](/posts/leetcode-79-word-search/) 에서 `board[y][x] = '#'` 했다가
+되돌린 것과 같은 구조인데, 여기서는 **원래대로 되돌리는 게 아니라 `2` 로 승격**시킨다.
+"다시 볼 필요 없음" 이라는 정보를 남기는 것이다.
+
 진입차수 방식은 이 구분 자체가 필요 없다. 상태를 **정수 하나**로 관리하기 때문이다.
 "지금 따라가는 중" 이라는 개념이 아예 없다.
 
@@ -156,6 +194,22 @@ bool canFinish(int numCourses, vector<vector<int>>& prerequisites) {
 그래도 갈리는 지점이 하나 있다. **진입차수 방식은 재귀를 쓰지 않는다.**
 깊이 2000 짜리 사슬에서 DFS 는 2000 단계를 내려간다. 이 문제는 제약이 작아 괜찮지만
 정점이 `10^5` 급이면 스택이 터진다. 반복문으로 도는 쪽이 깊이에 안전하다.
+
+## 어느 쪽을 쓸까
+
+| | 진입차수 (Kahn) | DFS 색칠 |
+| --- | --- | --- |
+| 상태 관리 | 정수 하나 | **3단계 구분 필요** |
+| 재귀 | 없음 | 그래프 깊이만큼 내려감 |
+| 성능 | 0.148ms | 0.135ms (사실상 동일) |
+| 덤 | 위상정렬 **순서**를 그대로 얻는다 | 사이클 **경로**를 복원하기 쉽다 |
+
+**코딩테스트에서는 진입차수 쪽이 무난하다.** 실수할 지점이 적고 스택 깊이 걱정이 없다.
+정점이 `10^5` 급인 문제에서 DFS 로 짜면 스택이 터진다.
+
+다만 [210. Course Schedule II](https://leetcode.com/problems/course-schedule-ii/) 처럼
+**순서를 실제로 출력**해야 하는 후속 문제에서는 진입차수 방식이 큐에서 꺼낸 순서를
+그대로 답으로 쓸 수 있어 더 유리하다. 이 문제 바로 다음에 풀면 좋은 짝이다.
 
 ## 다시 볼 것
 
