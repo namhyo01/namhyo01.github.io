@@ -50,6 +50,20 @@ gem을 올릴 때(`Gemfile`의 `jekyll-theme-chirpy` 버전 변경) 아래 파�
 ## 확인
 
 Ruby가 로컬에 없습니다. Docker로 빌드하세요 (명령은 README.md 참고).
+
+> **`docker run` 에 `-u "$(id -u):$(id -g)"` 를 빠뜨리지 마세요.** 빠뜨리면 `.jekyll-cache/`
+> 안에 root 소유 파일이 생기고, 다음번 일반 사용자 빌드가 이렇게 죽습니다.
+>
+> ```
+> jekyll/cache.rb:181:in 'File#initialize': Permission denied @ rb_sysopen
+>   - /site/.jekyll-cache/Jekyll/Cache/...
+> ```
+>
+> 복구는 root 로 캐시를 지우면 됩니다 (캐시라 지워도 안전합니다).
+>
+> ```bash
+> docker run --rm -v "$PWD":/site -w /site ruby:3.4 rm -rf /site/.jekyll-cache
+> ```
 배포 워크플로가 `htmlproofer`로 내부 링크를 검사하므로, **링크가 깨지면 배포가 실패합니다**.
 push 전에 같은 검사를 돌려보는 편이 안전합니다.
 
