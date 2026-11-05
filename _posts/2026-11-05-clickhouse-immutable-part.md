@@ -7,7 +7,7 @@ description: "쿼리 실행, 저장 구조, Mutation, 분산까지 — ClickHous
 ---
 
 『Learn ClickHouse 마스터클래스』 3장(핵심 아키텍처)과 4장(데이터 타입과 DDL)을 공부하며 만든 발표 자료입니다.
-장 순서 대신 질문 네 개로 다시 묶었고, 교재의 설명은 **ClickHouse 25.8 Docker 컨테이너에서 직접 돌려 보며** 확인했습니다.
+교재의 설명은 **ClickHouse 25.8 Docker 컨테이너에서 직접 돌려 보며** 확인했습니다.
 
 <div style="position: relative; width: 100%; aspect-ratio: 16 / 9; border-radius: 8px; overflow: hidden; background: #191919;">
   <iframe src="/assets/slides/clickhouse-immutable-part.html" title="불변 Part 하나로 이해하는 ClickHouse 내부 — 슬라이드" loading="lazy" allowfullscreen style="position: absolute; inset: 0; width: 100%; height: 100%; border: 0;"></iframe>
@@ -17,7 +17,7 @@ description: "쿼리 실행, 저장 구조, Mutation, 분산까지 — ClickHous
 > [새 탭에서 크게 보기](/assets/slides/clickhouse-immutable-part.html)
 {: .prompt-tip }
 
-## 질문 네 개
+## 다루는 내용
 
 | 파트 | 질문 | 다루는 것 |
 | --- | --- | --- |
