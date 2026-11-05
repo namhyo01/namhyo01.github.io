@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>불변 Part 하나로 이해하는 ClickHouse 내부</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
+<style>
+* { box-sizing: border-box; margin: 0; }
+html, body { height: 100%; background: #111214; overflow: hidden; }
+#stage { position: absolute; left: 50%; top: 50%; width: 1920px; height: 1080px; transform-origin: 0 0; }
+#stage > section { position: absolute; inset: 0; width: 1920px; height: 1080px; overflow: hidden;
+  opacity: 0; visibility: hidden; transition: opacity .35s ease; }
+#stage > section.on { opacity: 1; visibility: visible; }
+section h1, section h2, section h3, section p { margin: 0; }
+section table { border-collapse: collapse; width: 100%; }
+section th, section td { padding: .35em .6em; text-align: left; vertical-align: top; border-bottom: 1px solid #34373d; font-weight: 400; }
+section th { font-weight: 600; border-bottom: 2px solid #4a4e56; }
+section a { text-decoration: underline; }
+#bar { position: fixed; left: 0; bottom: 0; height: 4px; background: #5AA9E6; transition: width .3s ease; }
+#hud { position: fixed; right: 16px; bottom: 12px; font: 13px/1 'IBM Plex Sans KR', Arial, sans-serif; color: #8A9099;
+  display: flex; gap: 8px; align-items: center; opacity: .0; transition: opacity .3s; }
+body:hover #hud { opacity: 1; }
+#hud button { background: #232428; color: #ECEDEF; border: 1px solid #34373d; border-radius: 6px; padding: 6px 10px; cursor: pointer; font: inherit; }
+</style>
+</head>
+<body>
+<div id="stage">
+<section id="cover" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;justify-content:space-between">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">CLICKHOUSE STUDY · 3–4장</p>
+<div style="display:flex;flex-direction:column;gap:32px">
+<h1 style="font-size:120px;font-weight:700;line-height:1.1;color:#ECEDEF">불변 Part 하나로<br>이해하는 ClickHouse</h1>
+<p style="font-size:44px;line-height:1.3;color:#B4B9C2">핵심 아키텍처 · 데이터 타입과 DDL</p>
+</div>
+<p style="font-size:24px;color:#8A9099">모든 수치는 ClickHouse 25.8 Docker에서 직접 측정</p>
+</section>
+<section id="agenda" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:48px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">오늘의 흐름 · 40분</p>
+<h2 style="font-size:72px;font-weight:700;line-height:1.1;color:#ECEDEF">장이 아니라 질문 네 개로</h2>
+<table style="font-size:32px;color:#B4B9C2">
+<tr><th style="width:18%;color:#8A9099">구간</th><th style="width:66%;color:#8A9099">질문</th><th style="width:16%;color:#8A9099;text-align:right">시간</th></tr>
+<tr><td>오프닝</td><td>이상한 숫자 세 개</td><td style="text-align:right">3분</td></tr>
+<tr><td style="color:#5AA9E6">PART 1</td><td style="color:#ECEDEF">쿼리는 어떻게 빨라지나?</td><td style="text-align:right">12분</td></tr>
+<tr><td style="color:#5AA9E6">PART 2</td><td style="color:#ECEDEF">데이터는 디스크에 어떻게 놓이나?</td><td style="text-align:right">10분</td></tr>
+<tr><td style="color:#5AA9E6">PART 3</td><td style="color:#ECEDEF">불변인데 데이터는 어떻게 바뀌나?</td><td style="text-align:right">8분</td></tr>
+<tr><td style="color:#5AA9E6">PART 4</td><td style="color:#ECEDEF">노드가 여러 대면 무엇이 달라지나?</td><td style="text-align:right">5분</td></tr>
+<tr><td>마무리</td><td>한 장 요약 → 퀴즈 · 토론</td><td style="text-align:right">2분</td></tr>
+</table>
+</section>
+<section id="numbers" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:64px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">오프닝</p>
+<h2 style="font-size:72px;font-weight:700;line-height:1.1;color:#ECEDEF">직접 돌려보다 이상했던 숫자 세 개</h2>
+<div style="display:flex;gap:32px">
+<div style="flex:1;display:flex;flex-direction:column;gap:24px;background:#232428;border-top:6px solid #5AA9E6;border-radius:20px;padding:48px">
+<p style="font-size:120px;font-weight:700;line-height:1.1;color:#5AA9E6">120배</p>
+<p style="font-size:32px;line-height:1.4;color:#B4B9C2">같은 100만 행, 같은 LIMIT 5인데 읽은 행 수가 이만큼 차이</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:24px;background:#232428;border-top:6px solid #F2A65A;border-radius:20px;padding:48px">
+<p style="font-size:120px;font-weight:700;line-height:1.1;color:#F2A65A">3행</p>
+<p style="font-size:32px;line-height:1.4;color:#B4B9C2">1행만 UPDATE 했는데 Part의 3행을 전부 다시 썼다</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:24px;background:#232428;border-top:6px solid #ECEDEF;border-radius:20px;padding:48px">
+<p style="font-size:120px;font-weight:700;line-height:1.1;color:#ECEDEF">1.0배</p>
+<p style="font-size:32px;line-height:1.4;color:#B4B9C2">1분 간격 타임스탬프 100만 개가 기본 코덱으로 전혀 압축 안 됨</p>
+</div>
+</div>
+</section>
+<section id="answer" style="background:#F2A65A;color:#191919;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;justify-content:center;gap:48px">
+<p style="font-size:44px;font-weight:600;line-height:1.3;color:#3A2A18">세 숫자의 답은 하나</p>
+<h1 style="font-size:120px;font-weight:700;line-height:1.1;color:#191919">Part는 한 번 쓰면<br>바뀌지 않는다</h1>
+<p style="font-size:44px;line-height:1.3;color:#3A2A18">읽기 · 저장 · 변경 · 분산이 모두 여기서 나온다</p>
+</section>
+<section id="p1" style="background:#202124;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;justify-content:center;gap:40px">
+<p style="font-size:44px;font-weight:700;color:#5AA9E6;letter-spacing:2px">PART 1</p>
+<h1 style="font-size:120px;font-weight:700;line-height:1.1;color:#ECEDEF">쿼리는 어떻게<br>빨라지나?</h1>
+<p style="font-size:32px;line-height:1.4;color:#B4B9C2">6단계 변환 · 옵티마이저 · Processor · 병렬성 · 정렬 키</p>
+</section>
+<section id="pipeline" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:32px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 1 · 쿼리 실행</p>
+<h2 style="font-size:72px;font-weight:700;line-height:1.1;color:#ECEDEF">SQL은 6단계를 거쳐 실행된다</h2>
+<div style="display:flex;justify-content:center">
+<img src="/assets/img/posts/clickhouse-immutable-part-pipeline.gif" alt="쿼리 실행 6단계 애니메이션: Parsing, 분석·최적화, 논리 플랜, 물리 플랜, 스케줄링, 스트리밍" style="width:1440px;height:600px;object-fit:contain">
+</div>
+</section>
+<section id="optimizer" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:32px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 1 · 옵티마이저</p>
+<h2 style="font-size:72px;font-weight:700;line-height:1.1;color:#ECEDEF">옵티마이저가 쿼리를 다시 쓴다</h2>
+<div style="display:flex;gap:32px">
+<div style="flex:1;display:flex;flex-direction:column;gap:16px;background:#232428;border-radius:20px;padding:40px">
+<p style="font-size:24px;font-weight:600;color:#8A9099">내가 쓴 쿼리</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:28px;line-height:1.5;color:#ECEDEF">SELECT concat(lower('a'), upper('b')),<br>sum(a * 2)<br>FROM logs<br>WHERE (status = 1 OR status = 2<br>OR status = 3)<br>AND toYear(event_time) = 2025</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:16px;background:#232428;border-radius:20px;padding:40px">
+<p style="font-size:24px;font-weight:600;color:#8A9099">25.8이 실제로 실행한 쿼리</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:28px;line-height:1.5;color:#ECEDEF">SELECT <span style="color:#F2A65A">'aB'</span>,<br><span style="color:#F2A65A">sum(a) * 2</span><br>FROM logs<br>WHERE <span style="color:#F2A65A">status IN (1, 2, 3)</span><br><span style="color:#5AA9E6">AND event_time &gt;= '2025-01-01'</span><br><span style="color:#5AA9E6">AND event_time &lt; '2026-01-01'</span></p>
+</div>
+</div>
+<p style="font-size:32px;line-height:1.4;color:#B4B9C2"><b style="color:#5AA9E6">파란 두 줄이 핵심</b> — 범위 조건이 돼야 정렬 키 인덱스로 Granule을 건너뛴다.<br>OR가 2개면 IN으로 안 바뀐다(3개부터). EXPLAIN SYNTAX로는 안 보인다.</p>
+</section>
+<section id="volcano" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:32px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 1 · 실행 모델</p>
+<h2 style="font-size:72px;font-weight:700;line-height:1.1;color:#ECEDEF">한 행씩 부르지 않고 Block이 흐른다</h2>
+<div style="display:flex;justify-content:center">
+<img src="/assets/img/posts/clickhouse-immutable-part-volcano.gif" alt="Volcano 모델의 next() 왕복과 Processor 파이프라인의 Block 흐름 비교 애니메이션" style="width:1440px;height:600px;object-fit:contain">
+</div>
+</section>
+<section id="parallel" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:32px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 1 · 병렬성</p>
+<h2 style="font-size:72px;font-weight:700;line-height:1.1;color:#ECEDEF">병렬성은 데이터를 쪼개서 만든다</h2>
+<div style="display:flex;gap:32px">
+<div style="flex:1;display:flex;flex-direction:column;gap:16px;background:#232428;border-radius:20px;padding:40px">
+<p style="font-size:24px;font-weight:600;color:#8A9099">EXPLAIN PIPELINE · max_threads = 4</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:28px;line-height:1.5;color:#ECEDEF">ExpressionTransform × 4<br>Resize 4 → 4<br><span style="color:#F2A65A">AggregatingTransform × 4</span><br>ExpressionTransform × 4<br><span style="color:#5AA9E6">MergeTreeSelect × 4</span></p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:24px">
+<div style="display:flex;flex-direction:column;gap:8px;background:#232428;border-left:6px solid #5AA9E6;border-radius:12px;padding:32px">
+<h3 style="font-size:32px;font-weight:700;color:#ECEDEF">데이터 주도 병렬성</h3>
+<p style="font-size:24px;line-height:1.4;color:#B4B9C2">Part · Mark 범위를 레인 4개에 나눠 같은 파이프라인 실행</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:8px;background:#232428;border-left:6px solid #F2A65A;border-radius:12px;padding:32px">
+<h3 style="font-size:32px;font-weight:700;color:#ECEDEF">부분 집계 → 최종 병합</h3>
+<p style="font-size:24px;line-height:1.4;color:#B4B9C2">레인별 로컬 해시 테이블 → 락 경합 대신 마지막에 합침</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:8px;background:#232428;border-left:6px solid #8A9099;border-radius:12px;padding:32px">
+<h3 style="font-size:32px;font-weight:700;color:#ECEDEF">max_threads = auto(코어 수)</h3>
+<p style="font-size:24px;line-height:1.4;color:#B4B9C2">키우면 메모리 · 병합 비용과 다른 쿼리와의 CPU 경쟁도 커짐</p>
+</div>
+</div>
+</div>
+</section>
+<section id="sortkey" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 1 · 정렬 키 · 첫 번째 숫자의 답</p>
+<h2 style="font-size:72px;font-weight:700;line-height:1.1;color:#ECEDEF">정렬 키에 맞추면 아예 덜 읽는다</h2>
+<div style="display:flex;gap:32px">
+<div style="flex:1;display:flex;flex-direction:column;gap:16px;background:#232428;border-top:6px solid #5AA9E6;border-radius:20px;padding:48px">
+<p style="font-size:120px;font-weight:700;line-height:1.1;color:#5AA9E6">8,192행</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:28px;color:#ECEDEF">ORDER BY event_time LIMIT 5</p>
+<p style="font-size:32px;line-height:1.4;color:#B4B9C2">정렬 키 순서로 읽다가 5개 찾으면 멈춤 · Sort 단계 없음</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:16px;background:#232428;border-top:6px solid #F2A65A;border-radius:20px;padding:48px">
+<p style="font-size:120px;font-weight:700;line-height:1.1;color:#F2A65A">100만 행</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:28px;color:#ECEDEF">ORDER BY response_time LIMIT 5</p>
+<p style="font-size:32px;line-height:1.4;color:#B4B9C2">전부 읽고 PartialSorting → MergeSorting → MergingSorted</p>
+</div>
+</div>
+<p style="font-size:32px;line-height:1.4;color:#B4B9C2">optimize_read_in_order = 1 · optimize_aggregation_in_order = <span style="color:#F2A65A">0 (기본 꺼짐, 교재와 다름)</span></p>
+</section>
+<section id="p2" style="background:#202124;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;justify-content:center;gap:40px">
+<p style="font-size:44px;font-weight:700;color:#5AA9E6;letter-spacing:2px">PART 2</p>
+<h1 style="font-size:120px;font-weight:700;line-height:1.1;color:#ECEDEF">데이터는 디스크에<br>어떻게 놓이나?</h1>
+<p style="font-size:32px;line-height:1.4;color:#B4B9C2">타입 = 파일 · Nullable과 LowCardinality · 코덱 · 계산 컬럼</p>
+</section>
+<section id="typefiles" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 2 · 타입과 파일</p>
+<h2 style="font-size:72px;font-weight:700;line-height:1.1;color:#ECEDEF">타입을 고르면 파일이 정해진다</h2>
+<table style="font-size:32px;color:#B4B9C2">
+<tr><th style="width:42%;color:#8A9099">선언한 타입</th><th style="width:58%;color:#8A9099">Part 안에 실제로 생긴 파일</th></tr>
+<tr><td style="color:#ECEDEF">Nullable(String)</td><td>n.bin + <span style="color:#F2A65A">n.null.bin</span> (NULL 마스크)</td></tr>
+<tr><td style="color:#ECEDEF">LowCardinality(String)</td><td>lc.bin + <span style="color:#F2A65A">lc.dict.bin</span> (사전)</td></tr>
+<tr><td style="color:#ECEDEF">Array(UInt16)</td><td>arr.bin + <span style="color:#F2A65A">arr.size0.bin</span> (경계 오프셋)</td></tr>
+<tr><td style="color:#ECEDEF">Tuple(lat, lon)</td><td><span style="color:#F2A65A">loc.lat.bin · loc.lon.bin</span> (따로 읽기 가능)</td></tr>
+<tr><td style="color:#ECEDEF">Map(String, String)</td><td><span style="color:#F2A65A">m.keys.bin · m.values.bin</span> + m.size0.bin</td></tr>
+</table>
+<p style="font-size:24px;color:#8A9099">min_bytes_for_wide_part = 0 으로 컬럼별 파일을 강제한 뒤 Part 폴더를 직접 확인</p>
+</section>
+<section id="lowcard" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:32px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 2 · Nullable과 LowCardinality</p>
+<h2 style="font-size:72px;font-weight:700;line-height:1.1;color:#ECEDEF">Nullable은 비용, LowCardinality는 할인</h2>
+<div style="display:flex;justify-content:center">
+<img src="/assets/img/posts/clickhouse-immutable-part-lowcard.gif" alt="LowCardinality 사전 인코딩 애니메이션: 고유값이 사전으로 모이고 컬럼이 정수 인덱스로 바뀜" style="width:1200px;height:500px;object-fit:contain">
+</div>
+<div style="display:flex;gap:32px">
+<p style="flex:1;font-size:32px;line-height:1.4;color:#ECEDEF;background:#232428;border-left:6px solid #F2A65A;border-radius:12px;padding:20px 32px">Nullable: 파일 +1 · 정렬 키로 못 씀</p>
+<p style="flex:1;font-size:32px;line-height:1.4;color:#ECEDEF;background:#232428;border-left:6px solid #5AA9E6;border-radius:12px;padding:20px 32px">LowCardinality: 국가 코드 적합 · 이메일 부적합</p>
+</div>
+</section>
+<section id="codec" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:32px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 2 · 코덱 · 세 번째 숫자의 답</p>
+<h2 style="font-size:72px;font-weight:700;line-height:1.1;color:#ECEDEF">값이 다 다르면 압축되지 않는다</h2>
+<div style="display:flex;justify-content:center">
+<img src="/assets/img/posts/clickhouse-immutable-part-delta.gif" alt="Delta와 DoubleDelta 코덱 애니메이션: 타임스탬프가 60과 0으로 바뀌며 압축 크기가 3.83MiB에서 4.54KiB로 줄어듦" style="width:1440px;height:600px;object-fit:contain">
+</div>
+</section>
+<section id="rle" style="background:#202124;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#F2A65A;letter-spacing:2px">PART 2 · 교재 정정</p>
+<h2 style="font-size:72px;font-weight:700;line-height:1.1;color:#ECEDEF">교재가 권장한 RLE 코덱은 없다</h2>
+<div style="display:flex;flex-direction:column;gap:16px;background:#191919;border-radius:20px;padding:40px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:28px;line-height:1.5;color:#ECEDEF">CREATE TABLE t (x UInt8 CODEC(RLE, LZ4)) ...</p>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:28px;line-height:1.5;color:#F2A65A">Code: 432. UNKNOWN_CODEC: Unknown codec family: RLE</p>
+</div>
+<div style="display:flex;gap:32px">
+<div style="flex:1;display:flex;flex-direction:column;gap:12px;background:#232428;border-radius:20px;padding:40px">
+<h3 style="font-size:32px;font-weight:700;color:#ECEDEF">25.8에 있는 코덱</h3>
+<p style="font-size:32px;line-height:1.4;color:#B4B9C2">LZ4 · LZ4HC · ZSTD · Delta · DoubleDelta · Gorilla · FPC · T64 · GCD · NONE</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:12px;background:#232428;border-radius:20px;padding:40px">
+<h3 style="font-size:32px;font-weight:700;color:#ECEDEF">Gorilla “70~90% 절감”도</h3>
+<p style="font-size:32px;line-height:1.4;color:#B4B9C2">부드러운 곡선 Float에선 1.2배. 효과는 데이터 분포에 달려 있다</p>
+</div>
+</div>
+</section>
+<section id="computed" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 2 · 계산 컬럼</p>
+<h2 style="font-size:72px;font-weight:700;line-height:1.1;color:#ECEDEF">저장할까, 매번 계산할까</h2>
+<table style="font-size:32px;color:#B4B9C2">
+<tr><th style="width:22%;color:#8A9099"></th><th style="width:26%;color:#ECEDEF">DEFAULT</th><th style="width:26%;color:#ECEDEF">MATERIALIZED</th><th style="width:26%;color:#ECEDEF">ALIAS</th></tr>
+<tr><td style="color:#8A9099">계산 시점</td><td>값이 생략되면</td><td>INSERT마다 항상</td><td>조회할 때마다</td></tr>
+<tr><td style="color:#8A9099">디스크</td><td>저장</td><td>저장</td><td style="color:#5AA9E6">저장 안 함 (0 B)</td></tr>
+<tr><td style="color:#8A9099">직접 INSERT</td><td>가능</td><td style="color:#F2A65A">에러</td><td>불가</td></tr>
+<tr><td style="color:#8A9099">SELECT *</td><td>보임</td><td style="color:#F2A65A">안 보임</td><td style="color:#F2A65A">안 보임</td></tr>
+<tr><td style="color:#8A9099">치르는 비용</td><td>저장 공간</td><td>저장 공간</td><td>조회 CPU</td></tr>
+</table>
+<p style="font-size:32px;line-height:1.4;color:#B4B9C2">타입 · 코덱 · 계산 컬럼 = Part 안에 <b style="color:#ECEDEF">무엇을 어떤 파일로 쓸지</b>의 결정</p>
+</section>
+<section id="p3" style="background:#202124;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;justify-content:center;gap:40px">
+<p style="font-size:44px;font-weight:700;color:#5AA9E6;letter-spacing:2px">PART 3</p>
+<h1 style="font-size:120px;font-weight:700;line-height:1.1;color:#ECEDEF">불변인데 데이터는<br>어떻게 바뀌나?</h1>
+<p style="font-size:32px;line-height:1.4;color:#B4B9C2">Part의 일생 · Mutation · 가벼운 ALTER와 무거운 ALTER</p>
+</section>
+<section id="parts" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:32px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 3 · Part의 일생</p>
+<h2 style="font-size:72px;font-weight:700;line-height:1.1;color:#ECEDEF">머지된 옛 Part는 바로 지우지 않는다</h2>
+<div style="display:flex;justify-content:center">
+<img src="/assets/img/posts/clickhouse-immutable-part-parts.gif" alt="Part 수명 주기 애니메이션: INSERT로 Part 3개 생성, 머지로 all_1_3_1 생성, 옛 Part는 Inactive, 480초 후 삭제" style="width:1440px;height:600px;object-fit:contain">
+</div>
+</section>
+<section id="mutation" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:32px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 3 · Mutation · 두 번째 숫자의 답</p>
+<h2 style="font-size:72px;font-weight:700;line-height:1.1;color:#ECEDEF">UPDATE는 새 Part를 다시 쓰는 일</h2>
+<div style="display:flex;justify-content:center">
+<img src="/assets/img/posts/clickhouse-immutable-part-mutation.gif" alt="Mutation 애니메이션: is_done 0 동안 옛 값, Part 전체를 읽어 all_1_3_1_4를 새로 쓰고 옛 Part는 Inactive" style="width:1200px;height:500px;object-fit:contain">
+</div>
+<div style="display:flex;gap:32px">
+<p style="flex:1;font-size:32px;line-height:1.4;color:#ECEDEF;background:#232428;border-left:6px solid #F2A65A;border-radius:12px;padding:20px 32px">ALTER UPDATE · DELETE: 비동기, Part 단위 재작성</p>
+<p style="flex:1;font-size:32px;line-height:1.4;color:#ECEDEF;background:#232428;border-left:6px solid #5AA9E6;border-radius:12px;padding:20px 32px">DELETE FROM: _row_exists 마스크만 (교재 밖)</p>
+</div>
+</section>
+<section id="alter" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 3 · DDL</p>
+<h2 style="font-size:72px;font-weight:700;line-height:1.1;color:#ECEDEF">가벼운 ALTER와 무거운 ALTER</h2>
+<table style="font-size:32px;color:#B4B9C2">
+<tr><th style="width:44%;color:#8A9099">ALTER</th><th style="width:22%;color:#8A9099">Part 재작성</th><th style="width:34%;color:#8A9099">확인한 결과</th></tr>
+<tr><td style="color:#ECEDEF">ADD COLUMN … DEFAULT</td><td style="color:#5AA9E6">없음</td><td>메타데이터만</td></tr>
+<tr><td style="color:#ECEDEF">MODIFY COLUMN … CODEC</td><td style="color:#5AA9E6">없음</td><td>새 Part부터 적용</td></tr>
+<tr><td style="color:#ECEDEF">MODIFY COLUMN 타입 변경</td><td style="color:#F2A65A">있음</td><td>all_1_1_0 → all_1_1_0_2</td></tr>
+<tr><td style="color:#ECEDEF">DROP COLUMN</td><td style="color:#F2A65A">있음</td><td>컬럼 파일 빠진 새 Part</td></tr>
+</table>
+<p style="font-size:32px;line-height:1.4;color:#B4B9C2">무중단 DDL = 메타데이터 변경 → 앱 배포 → 신규 데이터 → 필요하면 백필 → 옛 컬럼 제거</p>
+</section>
+<section id="p4" style="background:#202124;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;justify-content:center;gap:40px">
+<p style="font-size:44px;font-weight:700;color:#5AA9E6;letter-spacing:2px">PART 4</p>
+<h1 style="font-size:120px;font-weight:700;line-height:1.1;color:#ECEDEF">노드가 여러 대면<br>무엇이 달라지나?</h1>
+<p style="font-size:32px;line-height:1.4;color:#B4B9C2">Keeper · Scatter-Gather · 일관성의 경계</p>
+</section>
+<section id="keeper" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 4 · 복제</p>
+<h2 style="font-size:72px;font-weight:700;line-height:1.1;color:#ECEDEF">Keeper는 파일이 아니라 순서를 맞춘다</h2>
+<div style="display:flex;gap:32px">
+<div style="flex:1;display:flex;flex-direction:column;gap:12px;background:#232428;border-top:6px solid #5AA9E6;border-radius:20px;padding:40px">
+<h3 style="font-size:44px;font-weight:700;color:#ECEDEF">하는 일</h3>
+<p style="font-size:32px;line-height:1.4;color:#B4B9C2">Raft 합의로 복제 로그 · DDL 순서 · 메타데이터 조정</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:12px;background:#232428;border-top:6px solid #F2A65A;border-radius:20px;padding:40px">
+<h3 style="font-size:44px;font-weight:700;color:#ECEDEF">안 하는 일</h3>
+<p style="font-size:32px;line-height:1.4;color:#B4B9C2">Part 파일 저장. 파일은 레플리카끼리 직접 Fetch</p>
+</div>
+</div>
+<div style="display:flex;gap:16px;align-items:center">
+<p style="flex:1;font-size:24px;line-height:1.4;color:#ECEDEF;background:#232428;border-radius:12px;padding:24px;text-align:center">Replica 1<br>INSERT → Part</p>
+<p style="font-size:32px;color:#8A9099">→</p>
+<p style="flex:1;font-size:24px;line-height:1.4;color:#ECEDEF;background:#232428;border-radius:12px;padding:24px;text-align:center">Keeper<br>“Part 추가” 로그</p>
+<p style="font-size:32px;color:#8A9099">→</p>
+<p style="flex:1;font-size:24px;line-height:1.4;color:#ECEDEF;background:#232428;border-radius:12px;padding:24px;text-align:center">Replica 2<br>새 로그 조회</p>
+<p style="font-size:32px;color:#8A9099">→</p>
+<p style="flex:1;font-size:24px;line-height:1.4;color:#ECEDEF;background:#232428;border-radius:12px;padding:24px;text-align:center">Replica 2<br>Replica 1에서 Fetch</p>
+</div>
+</section>
+<section id="scatter" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:32px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 4 · 분산 쿼리</p>
+<h2 style="font-size:72px;font-weight:700;line-height:1.1;color:#ECEDEF">원본 대신 집계 상태를 보낸다</h2>
+<div style="display:flex;justify-content:center">
+<img src="/assets/img/posts/clickhouse-immutable-part-scatter.gif" alt="Scatter-Gather 애니메이션: 이니시에이터가 샤드 3개에 쿼리를 보내고 샤드가 sum과 n을 돌려보내 avg 13.3을 계산, 평균의 평균 16.7은 오답" style="width:1440px;height:600px;object-fit:contain">
+</div>
+</section>
+<section id="consistency" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 4 · 일관성</p>
+<h2 style="font-size:72px;font-weight:700;line-height:1.1;color:#ECEDEF">일관성은 Part 스냅샷까지만</h2>
+<div style="display:flex;gap:32px">
+<div style="flex:3;display:flex;flex-direction:column">
+<table style="font-size:32px;color:#B4B9C2">
+<tr><th style="width:52%;color:#8A9099">요구</th><th style="width:48%;color:#8A9099">ClickHouse</th></tr>
+<tr><td style="color:#ECEDEF">SELECT 하나의 일관된 읽기</td><td style="color:#5AA9E6">보장 (스냅샷)</td></tr>
+<tr><td style="color:#ECEDEF">INSERT 원자성</td><td style="color:#F2A65A">Block 단위만</td></tr>
+<tr><td style="color:#ECEDEF">여러 샤드 2PC</td><td style="color:#F2A65A">기본 제공 안 함</td></tr>
+<tr><td style="color:#ECEDEF">레플리카 즉시 동일</td><td style="color:#F2A65A">복제 지연 있음</td></tr>
+<tr><td style="color:#ECEDEF">fsync_after_insert</td><td style="color:#F2A65A">기본 0</td></tr>
+</table>
+</div>
+<div style="flex:2;display:flex;flex-direction:column;gap:16px;background:#232428;border-top:6px solid #F2A65A;border-radius:20px;padding:40px">
+<p style="font-size:120px;font-weight:700;line-height:1.1;color:#F2A65A">Part 3개</p>
+<p style="font-size:32px;line-height:1.4;color:#B4B9C2">300만 행 INSERT 한 번의 결과. 중간에 실패하면 일부만 반영될 수 있다</p>
+</div>
+</div>
+</section>
+<section id="summary" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:48px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">마무리</p>
+<h2 style="font-size:72px;font-weight:700;line-height:1.1;color:#ECEDEF">모든 건 불변 Part에서 시작한다</h2>
+<div style="display:flex;gap:32px">
+<div style="flex:1;display:flex;flex-direction:column;gap:16px;background:#232428;border-top:6px solid #5AA9E6;border-radius:20px;padding:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6">PART 1</p>
+<h3 style="font-size:44px;font-weight:700;color:#ECEDEF">읽기</h3>
+<p style="font-size:32px;line-height:1.4;color:#B4B9C2">정렬 키에 맞으면 덜 읽고, Part를 쪼개 병렬로</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:16px;background:#232428;border-top:6px solid #5AA9E6;border-radius:20px;padding:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6">PART 2</p>
+<h3 style="font-size:44px;font-weight:700;color:#ECEDEF">저장</h3>
+<p style="font-size:32px;line-height:1.4;color:#B4B9C2">타입 · 코덱은 Part 안 파일의 설계</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:16px;background:#232428;border-top:6px solid #5AA9E6;border-radius:20px;padding:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6">PART 3</p>
+<h3 style="font-size:44px;font-weight:700;color:#ECEDEF">변경</h3>
+<p style="font-size:32px;line-height:1.4;color:#B4B9C2">수정 = 새 Part 작성 + 교체</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:16px;background:#232428;border-top:6px solid #5AA9E6;border-radius:20px;padding:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6">PART 4</p>
+<h3 style="font-size:44px;font-weight:700;color:#ECEDEF">분산</h3>
+<p style="font-size:32px;line-height:1.4;color:#B4B9C2">순서는 Keeper, 계산은 샤드로</p>
+</div>
+</div>
+<p style="font-size:32px;line-height:1.4;color:#B4B9C2">120배 · 3행 · 1.0배 — 오프닝의 세 숫자는 모두 이 한 문장으로 설명된다</p>
+</section>
+<section id="diffs" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#F2A65A;letter-spacing:2px">교재 vs 25.8 실측</p>
+<h2 style="font-size:72px;font-weight:700;line-height:1.1;color:#ECEDEF">직접 해 보니 달랐던 것 다섯 가지</h2>
+<table style="font-size:32px;color:#B4B9C2">
+<tr><th style="width:46%;color:#8A9099">교재</th><th style="width:54%;color:#8A9099">실제 (25.8)</th></tr>
+<tr><td>RLE + LZ4 권장</td><td style="color:#ECEDEF">RLE 코덱 없음 (UNKNOWN_CODEC)</td></tr>
+<tr><td>x=10 OR x=20 → IN</td><td style="color:#ECEDEF">2개는 그대로, 3개부터 IN</td></tr>
+<tr><td>정렬 순서 집계로 메모리 절약</td><td style="color:#ECEDEF">optimize_aggregation_in_order 기본 0</td></tr>
+<tr><td>MODIFY COLUMN은 점진 변환</td><td style="color:#ECEDEF">타입 변경은 Mutation (재작성)</td></tr>
+<tr><td>단일 INSERT는 원자적</td><td style="color:#ECEDEF">Block 단위 · 큰 INSERT는 여러 Part</td></tr>
+</table>
+</section>
+<section id="next" style="background:#202124;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;justify-content:center;gap:40px">
+<p style="font-size:44px;font-weight:700;color:#5AA9E6;letter-spacing:2px">NEXT</p>
+<h1 style="font-size:120px;font-weight:700;line-height:1.1;color:#ECEDEF">퀴즈 · 키워드 · 토론</h1>
+<p style="font-size:44px;line-height:1.3;color:#B4B9C2">키워드 심화: Mutation — ALTER UPDATE vs DELETE FROM vs Lightweight UPDATE</p>
+<p style="font-size:32px;line-height:1.4;color:#B4B9C2">스터디에서 이어서 진행</p>
+</section>
+</div>
+<div id="bar"></div>
+<div id="hud"><button id="prev" aria-label="이전 슬라이드">◀</button><span id="num"></span><button id="next" aria-label="다음 슬라이드">▶</button><button id="fs" aria-label="전체 화면">전체 화면</button></div>
+<script>
+(function () {
+  var stage = document.getElementById('stage');
+  var slides = Array.prototype.slice.call(stage.children);
+  var bar = document.getElementById('bar');
+  var num = document.getElementById('num');
+  var cur = 0;
+  function fit() {
+    var s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    stage.style.transform = 'scale(' + s + ') translate(-50%, -50%)';
+  }
+  function show(i) {
+    cur = Math.max(0, Math.min(slides.length - 1, i));
+    slides.forEach(function (el, k) { el.classList.toggle('on', k === cur); });
+    bar.style.width = ((cur + 1) / slides.length * 100) + '%';
+    num.textContent = (cur + 1) + ' / ' + slides.length;
+    if (location.hash !== '#' + (cur + 1)) history.replaceState(null, '', '#' + (cur + 1));
+  }
+  document.addEventListener('keydown', function (e) {
+    if (['ArrowRight', 'PageDown', ' ', 'Enter'].indexOf(e.key) >= 0) { e.preventDefault(); show(cur + 1); }
+    else if (['ArrowLeft', 'PageUp', 'Backspace'].indexOf(e.key) >= 0) { e.preventDefault(); show(cur - 1); }
+    else if (e.key === 'Home') show(0);
+    else if (e.key === 'End') show(slides.length - 1);
+    else if (e.key === 'f' || e.key === 'F') toggleFs();
+  });
+  stage.addEventListener('click', function (e) {
+    if (e.target.closest('a')) return;
+    show(e.clientX > window.innerWidth / 2 ? cur + 1 : cur - 1);
+  });
+  var sx = null;
+  document.addEventListener('touchstart', function (e) { sx = e.touches[0].clientX; }, { passive: true });
+  document.addEventListener('touchend', function (e) {
+    if (sx === null) return;
+    var dx = e.changedTouches[0].clientX - sx;
+    if (Math.abs(dx) > 40) show(dx < 0 ? cur + 1 : cur - 1);
+    sx = null;
+  });
+  function toggleFs() {
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+    else document.exitFullscreen();
+  }
+  document.getElementById('prev').onclick = function () { show(cur - 1); };
+  document.getElementById('next').onclick = function () { show(cur + 1); };
+  document.getElementById('fs').onclick = toggleFs;
+  window.addEventListener('resize', fit);
+  fit();
+  show((parseInt(location.hash.slice(1), 10) || 1) - 1);
+})();
+</script>
+</body>
+</html>
