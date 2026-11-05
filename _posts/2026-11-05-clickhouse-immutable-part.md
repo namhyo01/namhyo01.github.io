@@ -13,7 +13,7 @@ description: "쿼리 실행, 저장 구조, Mutation, 분산까지 — ClickHous
   <iframe src="/assets/slides/clickhouse-immutable-part.html" title="불변 Part 하나로 이해하는 ClickHouse 내부 — 슬라이드" loading="lazy" allowfullscreen style="position: absolute; inset: 0; width: 100%; height: 100%; border: 0;"></iframe>
 </div>
 
-> 슬라이드를 클릭하거나 `←` `→` 키로 넘깁니다. `F` 는 전체 화면, `N` 은 발표 메모.
+> 슬라이드를 클릭하거나 `←` `→` 키로 넘깁니다. `F` 는 전체 화면.
 > [새 탭에서 크게 보기](/assets/slides/clickhouse-immutable-part.html)
 {: .prompt-tip }
 
