@@ -91,6 +91,26 @@ body:hover #hud { opacity: 1; }
 <img src="/assets/img/posts/clickhouse-immutable-part-pipeline.gif" alt="쿼리 실행 6단계 애니메이션: Parsing, 분석·최적화, 논리 플랜, 물리 플랜, 스케줄링, 스트리밍" style="width:1440px;height:600px;object-fit:contain">
 </div>
 </section>
+<section id="mysql-vs" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:32px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 1 · MySQL과 비교</p>
+<h2 style="font-size:72px;font-weight:700;line-height:1.1;color:#ECEDEF">같은 SQL, 다른 실행</h2>
+<div style="display:flex;justify-content:center">
+<img src="/assets/img/posts/clickhouse-immutable-part-mysql_vs.gif" alt="MySQL 8.4와 ClickHouse 25.8이 같은 100만 행에 같은 쿼리를 실행하는 비교 애니메이션: 집계는 MySQL 230ms 대 ClickHouse 8ms, 1건 조회는 MySQL 0.013ms 대 ClickHouse 2ms" style="width:1440px;height:600px;object-fit:contain">
+</div>
+</section>
+<section id="mysql-table" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 1 · MySQL과 비교</p>
+<h2 style="font-size:72px;font-weight:700;line-height:1.1;color:#ECEDEF">6단계를 나란히 놓으면</h2>
+<table style="font-size:32px;color:#B4B9C2">
+<tr><th style="width:20%;color:#8A9099">단계</th><th style="width:40%;color:#F2A65A">MySQL 8.4 (InnoDB)</th><th style="width:40%;color:#5AA9E6">ClickHouse 25.8</th></tr>
+<tr><td style="color:#8A9099">파싱</td><td>SQL → 파스 트리</td><td>SQL → AST</td></tr>
+<tr><td style="color:#8A9099">최적화</td><td>비용 기반: 통계로 인덱스 · 조인 순서 선택</td><td>주로 규칙 기반 재작성 + 인덱스 분석</td></tr>
+<tr><td style="color:#8A9099">실행 계획</td><td>Iterator 트리</td><td>Processor DAG</td></tr>
+<tr><td style="color:#8A9099">실행</td><td>쿼리당 스레드 1개 · 행 단위</td><td>스레드 N개 · Block 단위</td></tr>
+<tr><td style="color:#8A9099">저장</td><td>B+tree · 행 저장</td><td>컬럼 파일 · 희소 인덱스</td></tr>
+<tr><td style="color:#8A9099">잘하는 것</td><td style="color:#ECEDEF">1건 찾기 · 수정 (0.013ms)</td><td style="color:#ECEDEF">대량 집계 (95만 행 8ms)</td></tr>
+</table>
+</section>
 <section id="optimizer" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:32px">
 <p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 1 · 옵티마이저</p>
 <h2 style="font-size:72px;font-weight:700;line-height:1.1;color:#ECEDEF">옵티마이저가 쿼리를 다시 쓴다</h2>
@@ -113,6 +133,106 @@ body:hover #hud { opacity: 1; }
 <img src="/assets/img/posts/clickhouse-immutable-part-volcano.gif" alt="Volcano 모델의 next() 왕복과 Processor 파이프라인의 Block 흐름 비교 애니메이션" style="width:1440px;height:600px;object-fit:contain">
 </div>
 </section>
+<section id="tuple-block" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 1 · 실행 모델</p>
+<h2 style="font-size:72px;font-weight:700;line-height:1.1;color:#ECEDEF">튜플은 행 하나, Block은 컬럼 배열 묶음</h2>
+<div style="display:flex;gap:32px">
+<div style="flex:1;display:flex;flex-direction:column;gap:16px;background:#232428;border-top:6px solid #F2A65A;border-radius:20px;padding:40px">
+<h3 style="font-size:44px;font-weight:700;color:#ECEDEF">튜플</h3>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:28px;line-height:1.6;color:#ECEDEF">next() → (200, 0.12)<br>next() → (500, 0.80)<br>next() → (200, 0.05)</p>
+<p style="font-size:32px;line-height:1.4;color:#B4B9C2">행 1개씩 오간다. 함수도 행마다 호출</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:16px;background:#232428;border-top:6px solid #5AA9E6;border-radius:20px;padding:40px">
+<h3 style="font-size:44px;font-weight:700;color:#ECEDEF">Block</h3>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:28px;line-height:1.6;color:#ECEDEF">status        [200, 500, 200, …]<br>response_time [0.12, 0.80, …]<br>rows          65,536</p>
+<p style="font-size:32px;line-height:1.4;color:#B4B9C2">수만 행이 한 번에. 안쪽은 컬럼 배열을 도는 루프</p>
+</div>
+</div>
+<p style="font-size:32px;line-height:1.4;color:#B4B9C2">필요 없는 컬럼은 배열째 빠지고, 같은 연산을 연속 데이터에 반복해 <b style="color:#ECEDEF">캐시 · SIMD</b>에 유리하다</p>
+</section>
+<section id="block-size" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:24px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 1 · 25.8 실측 · 스레드 1개 · 100만 행 필터 + GROUP BY</p>
+<h2 style="font-size:72px;font-weight:700;line-height:1.1;color:#ECEDEF">Block 크기만 바꿔 보면</h2>
+<p style="font-size:24px;color:#8A9099">Block 크기(행)</p>
+<div style="display:flex;gap:24px;align-items:center">
+<p style="width:220px;font-size:32px;text-align:right;color:#ECEDEF">65,536행</p>
+<div style="width:243px;height:36px;background:#5AA9E6;border-radius:6px"></div>
+<p style="font-size:32px;font-weight:700;color:#5AA9E6">4ms</p>
+</div>
+<div style="display:flex;gap:24px;align-items:center">
+<p style="width:220px;font-size:32px;text-align:right;color:#ECEDEF">8,192행</p>
+<div style="width:270px;height:36px;background:#5AA9E6;border-radius:6px"></div>
+<p style="font-size:32px;font-weight:700;color:#5AA9E6">5ms</p>
+</div>
+<div style="display:flex;gap:24px;align-items:center">
+<p style="width:220px;font-size:32px;text-align:right;color:#ECEDEF">1,024행</p>
+<div style="width:339px;height:36px;background:#5AA9E6;border-radius:6px"></div>
+<p style="font-size:32px;font-weight:700;color:#5AA9E6">9ms</p>
+</div>
+<div style="display:flex;gap:24px;align-items:center">
+<p style="width:220px;font-size:32px;text-align:right;color:#ECEDEF">128행</p>
+<div style="width:529px;height:36px;background:#5AA9E6;border-radius:6px"></div>
+<p style="font-size:32px;font-weight:700;color:#5AA9E6">45ms</p>
+</div>
+<div style="display:flex;gap:24px;align-items:center">
+<p style="width:220px;font-size:32px;text-align:right;color:#ECEDEF">16행</p>
+<div style="width:770px;height:36px;background:#F2A65A;border-radius:6px"></div>
+<p style="font-size:32px;font-weight:700;color:#F2A65A">345ms</p>
+</div>
+<div style="display:flex;gap:24px;align-items:center">
+<p style="width:220px;font-size:32px;text-align:right;color:#ECEDEF">4행</p>
+<div style="width:934px;height:36px;background:#F2A65A;border-radius:6px"></div>
+<p style="font-size:32px;font-weight:700;color:#F2A65A">1,375ms</p>
+</div>
+<div style="display:flex;gap:24px;align-items:center">
+<p style="width:220px;font-size:32px;text-align:right;color:#ECEDEF">1행</p>
+<div style="width:1080px;height:36px;background:#F2A65A;border-radius:6px"></div>
+<p style="font-size:32px;font-weight:700;color:#F2A65A">4,726ms</p>
+</div>
+<p style="font-size:32px;line-height:1.4;color:#B4B9C2">같은 엔진 · 같은 쿼리인데 1행씩 흘리면 <b style="color:#F2A65A">약 1,000배</b> 느려진다</p>
+</section>
+<section id="processor-cpu" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 1 · 실행 모델</p>
+<h2 style="font-size:72px;font-weight:700;line-height:1.1;color:#ECEDEF">Processor는 CPU가 아니라 일감</h2>
+<div style="display:flex;gap:48px;align-items:center">
+<div style="flex:1;display:flex;flex-direction:column;gap:12px;border:2px solid #34373d;border-radius:20px;padding:32px">
+<p style="font-size:24px;font-weight:600;color:#8A9099">일감: Processor (파이프라인의 단계)</p>
+<div style="display:flex;gap:12px">
+<p style="font-size:24px;color:#ECEDEF;background:#232428;border-radius:8px;padding:8px 16px">Read</p>
+<p style="font-size:24px;color:#ECEDEF;background:#232428;border-radius:8px;padding:8px 16px">Filter</p>
+<p style="font-size:24px;color:#ECEDEF;background:#232428;border-radius:8px;padding:8px 16px">Aggregate</p>
+</div>
+<div style="display:flex;gap:12px">
+<p style="font-size:24px;color:#ECEDEF;background:#232428;border-radius:8px;padding:8px 16px">Read</p>
+<p style="font-size:24px;color:#ECEDEF;background:#232428;border-radius:8px;padding:8px 16px">Filter</p>
+<p style="font-size:24px;color:#ECEDEF;background:#232428;border-radius:8px;padding:8px 16px">Aggregate</p>
+</div>
+<div style="display:flex;gap:12px">
+<p style="font-size:24px;color:#ECEDEF;background:#232428;border-radius:8px;padding:8px 16px">Read</p>
+<p style="font-size:24px;color:#ECEDEF;background:#232428;border-radius:8px;padding:8px 16px">Filter</p>
+<p style="font-size:24px;color:#ECEDEF;background:#232428;border-radius:8px;padding:8px 16px">Aggregate</p>
+</div>
+<div style="display:flex;gap:12px">
+<p style="font-size:24px;color:#ECEDEF;background:#232428;border-radius:8px;padding:8px 16px">Read</p>
+<p style="font-size:24px;color:#ECEDEF;background:#232428;border-radius:8px;padding:8px 16px">Filter</p>
+<p style="font-size:24px;color:#ECEDEF;background:#232428;border-radius:8px;padding:8px 16px">Aggregate</p>
+</div>
+</div>
+<div style="display:flex;flex-direction:column;gap:12px;align-items:center">
+<p style="font-size:24px;color:#8A9099">스케줄러가</p>
+<p style="font-size:44px;color:#8A9099">←</p>
+<p style="font-size:24px;color:#8A9099">준비된 것부터 배정</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:12px;border:2px solid #34373d;border-radius:20px;padding:32px">
+<p style="font-size:24px;font-weight:600;color:#8A9099">일꾼: max_threads</p>
+<p style="font-size:24px;font-weight:600;color:#191919;background:#5AA9E6;border-radius:8px;padding:8px 20px">스레드 1</p>
+<p style="font-size:24px;font-weight:600;color:#191919;background:#5AA9E6;border-radius:8px;padding:8px 20px">스레드 2</p>
+<p style="font-size:24px;font-weight:600;color:#191919;background:#5AA9E6;border-radius:8px;padding:8px 20px">스레드 3</p>
+<p style="font-size:24px;font-weight:600;color:#191919;background:#5AA9E6;border-radius:8px;padding:8px 20px">스레드 4</p>
+</div>
+</div>
+<p style="font-size:32px;line-height:1.4;color:#B4B9C2"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#ECEDEF">AggregatingTransform × 4</span> = 집계 Processor 4개. CPU 4개라는 뜻이 아니다</p>
+</section>
 <section id="parallel" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:32px">
 <p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 1 · 병렬성</p>
 <h2 style="font-size:72px;font-weight:700;line-height:1.1;color:#ECEDEF">병렬성은 데이터를 쪼개서 만든다</h2>
@@ -133,6 +253,37 @@ body:hover #hud { opacity: 1; }
 <div style="display:flex;flex-direction:column;gap:8px;background:#232428;border-left:6px solid #8A9099;border-radius:12px;padding:32px">
 <h3 style="font-size:32px;font-weight:700;color:#ECEDEF">max_threads = auto(코어 수)</h3>
 <p style="font-size:24px;line-height:1.4;color:#B4B9C2">키우면 메모리 · 병합 비용과 다른 쿼리와의 CPU 경쟁도 커짐</p>
+</div>
+</div>
+</div>
+</section>
+<section id="thread-scale" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 1 · 25.8 실측 · 같은 GROUP BY 쿼리</p>
+<h2 style="font-size:72px;font-weight:700;line-height:1.1;color:#ECEDEF">스레드 수만 바꿔 보면</h2>
+<div style="display:flex;gap:48px">
+<div style="flex:3;display:flex;flex-direction:column">
+<table style="font-size:32px;color:#B4B9C2">
+<tr><th style="width:30%;color:#8A9099">max_threads</th><th style="width:35%;color:#8A9099;text-align:right">1억 행</th><th style="width:35%;color:#8A9099;text-align:right">100만 행</th></tr>
+<tr><td style="color:#ECEDEF">1</td><td style="text-align:right;color:#ECEDEF">322ms</td><td style="text-align:right">5ms</td></tr>
+<tr><td style="color:#ECEDEF">2</td><td style="text-align:right;color:#ECEDEF">168ms</td><td style="text-align:right">4ms</td></tr>
+<tr><td style="color:#ECEDEF">4</td><td style="text-align:right;color:#ECEDEF">88ms</td><td style="text-align:right">3ms</td></tr>
+<tr style="background:#232428"><td style="color:#ECEDEF">8</td><td style="text-align:right;color:#5AA9E6">57ms</td><td style="text-align:right">3ms</td></tr>
+<tr><td style="color:#ECEDEF">16</td><td style="text-align:right;color:#F2A65A">83ms</td><td style="text-align:right">4ms</td></tr>
+<tr><td style="color:#ECEDEF">20</td><td style="text-align:right;color:#F2A65A">95ms</td><td style="text-align:right">4ms</td></tr>
+</table>
+</div>
+<div style="flex:2;display:flex;flex-direction:column;gap:24px">
+<div style="display:flex;flex-direction:column;gap:8px;background:#232428;border-left:6px solid #5AA9E6;border-radius:12px;padding:32px">
+<h3 style="font-size:32px;font-weight:700;color:#ECEDEF">크면 병렬이 곱해진다</h3>
+<p style="font-size:24px;line-height:1.4;color:#B4B9C2">1억 행: 1 → 8스레드에서 5.6배</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:8px;background:#232428;border-left:6px solid #8A9099;border-radius:12px;padding:32px">
+<h3 style="font-size:32px;font-weight:700;color:#ECEDEF">작으면 거의 그대로</h3>
+<p style="font-size:24px;line-height:1.4;color:#B4B9C2">100만 행: 5ms → 3ms. 나누고 합치는 비용과 비슷</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:8px;background:#232428;border-left:6px solid #F2A65A;border-radius:12px;padding:32px">
+<h3 style="font-size:32px;font-weight:700;color:#ECEDEF">진짜 코어 수를 넘기면 느려진다</h3>
+<p style="font-size:24px;line-height:1.4;color:#B4B9C2">i7-12700F의 P코어는 8개. 그 이상은 하이퍼스레드가 코어를 나눠 쓰거나 느린 E코어로 → 20스레드에서 CPU를 4배 쓰고도 더 느림</p>
 </div>
 </div>
 </div>
@@ -568,7 +719,7 @@ body:hover #hud { opacity: 1; }
 <div id="notes" aria-live="polite"></div>
 <div id="bar"></div>
 <div id="hud"><button id="prev" aria-label="이전 슬라이드">◀</button><span id="num"></span><button id="next" aria-label="다음 슬라이드">▶</button><button id="nt" aria-label="발표 메모 보기">메모 (N)</button><button id="fs" aria-label="전체 화면">전체 화면</button></div>
-<script type="application/json" id="notes-data">["수치는 전부 직접 돌려본 결과", "퀴즈·토론은 Notion 자료 페이지에서", "세 숫자 모두 직접 측정\n답은 다음 장에서 한 문장으로", "immutable Part = 오늘의 유일한 키워드\n끝날 때 세 숫자를 다시 회수", "첫 번째 숫자 120배의 답이 이 파트 끝에", "앞 3단계 = 무엇을 할지(논리)\n뒤 3단계 = 저장 구조 보고 어떻게 할지(물리)\n5단계에서 레인 N개로 갈라졌다 합쳐짐", "EXPLAIN QUERY TREE dump_ast=1 로 확인\n상수 폴딩 / 산술 밖으로 / OR→IN / toYear→범위\n교재와 다른 점: OR 2개는 그대로", "왼쪽: 행마다 next() 왕복 → 호출 수 폭증\n오른쪽: 포트로 연결, 준비된 Processor만 실행\n실제 상태 6개, 교재는 3개로 단순화 (PortFull = 백프레셔)", "× 4 = 실행 레인 4개\n클수록 좋은 설정 아님 → 동시 쿼리 수와 같이 봐야", "정렬 키 (event_time, status), 100만 행\n8,192 = Granule 1개\nGROUP BY in-order는 왜 기본 꺼짐? → 토론거리", "세 번째 숫자 1.0배의 답이 이 파트에", "Part 폴더 ls 결과 그대로\nNullable = 파일 하나 더\nTuple = 필드별 파일 → 필요한 필드만 읽음", "Nullable 정렬 키 → allow_nullable_key 에러 (직접 확인)\n값 없음 ≠ 0 이면 Nullable 유지\nLC 인덱스 폭 UInt8→16→32 자동 승격", "LZ4 1.0배 → Delta 202배 → DoubleDelta 860배 (25.8 실측)\n차이를 만들어 반복을 만든다\n막대는 로그 스케일", "system.codecs 로 직접 목록 확인\nChimp도 없음\n코덱 수치는 반드시 내 데이터로 측정", "MATERIALIZED에 값 넣으면 ILLEGAL_COLUMN (직접 확인)\nSELECT * 에 MAT/ALIAS 안 나옴\nPART 2 한 줄 요약 = 마지막 문장", "두 번째 숫자 3행의 답이 이 파트에", "Part 이름 = 파티션_최소블록_최대블록_레벨[_mutation]\nold_parts_lifetime 480초 / Too many parts 3,000\n안 지우는 이유 = 읽던 SELECT → PART 4 스냅샷으로 연결", "ALTER 직후 SELECT → 옛 값 (mutations_sync = 0)\n1행 수정에 3행 Part 전체 재작성\nDELETE FROM → rows 3 그대로, 머지 때 실제 삭제\n→ 키워드 심화 주제", "system.mutations + Part 이름으로 확인\n교재는 MODIFY를 코덱 위주로 설명 → 타입 변경은 재작성\nPART 3 요약: 수정 = 새 Part 작성 + 교체", "PARTITION BY toYYYYMM(event_time) 로 1년치 120만 행\n파티션 없는 테이블은 Part 이름이 all_…\n파티션 = 칸막이, 정렬 키 = 칸 안의 순서", "시간으로 정렬하면 정렬 키만으로 파티션과 거의 같은 효과\n파티션이 도움 된 건 정렬 키가 시간이 아닐 때\n메시지 원문: ORDER BY key is sufficient to make range queries fast", "오래된 달 지우기·옮기기(DROP / DETACH / MOVE PARTITION)가 파티션의 본업\nmax_partitions_per_insert_block = 100\n에러 메시지 권장: 테이블 전체 파티션 1,000~10,000 미만", "노드가 늘어도 단위는 여전히 Part", "ZooKeeper(Java, ZAB) vs Keeper(C++, Raft/NuRaft)\nKeeper는 로그 순서만 합의\n파일 전송은 서버 간 직접", "avg → 샤드는 (sum, n)만 전송\n평균의 평균 16.7 ≠ 정답 13.3\n오프로딩 4단계: 읽기 → 필터 → 부분 집계(핵심) → 정렬·LIMIT", "스냅샷 = 3-1의 “옛 Part 안 지움” 덕분\nINSERT ≠ 트랜잭션, Block 단위\ndedup은 Replicated 기준, 일반 MergeTree는 기본 꺼짐", "세 숫자 회수: 120배=정렬 키, 3행=Mutation 재작성, 1.0배=값이 다 달라서\n다음: 교재와 달랐던 것", "전부 25.8 Docker에서 재현 가능\n재현 SQL은 Notion 자료 페이지 실습 섹션", "문제마다 → 한 번 = 정답 공개, 한 번 더 = 다음 문제\n1인 1문제는 이 뒤에 각자", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "작은 UPDATE 남발 → 큐 적체\n대안: ReplacingMergeTree, TTL, DROP PARTITION"]</script>
+<script type="application/json" id="notes-data">["수치는 전부 직접 돌려본 결과", "퀴즈·토론은 Notion 자료 페이지에서", "세 숫자 모두 직접 측정\n답은 다음 장에서 한 문장으로", "immutable Part = 오늘의 유일한 키워드\n끝날 때 세 숫자를 다시 회수", "첫 번째 숫자 120배의 답이 이 파트 끝에", "앞 3단계 = 무엇을 할지(논리)\n뒤 3단계 = 저장 구조 보고 어떻게 할지(물리)\n5단계에서 레인 N개로 갈라졌다 합쳐짐", "MySQL 8.4 컨테이너에 같은 100만 행\n집계: MySQL 230ms vs CH 8ms (CH는 1스레드여도 8ms)\n1건: MySQL 0.013ms (B+tree) vs CH 2ms (Granule 8,192행)\n측정 방식이 달라 대략 비교", "MySQL EXPLAIN ANALYZE: 96% 행이 조건에 맞아 인덱스 대신 Table scan 선택 (비용 기반)\n집계는 Aggregate using temporary table\n누가 빠르냐가 아니라 질문의 모양에 맞는 엔진", "EXPLAIN QUERY TREE dump_ast=1 로 확인\n상수 폴딩 / 산술 밖으로 / OR→IN / toYear→범위\n교재와 다른 점: OR 2개는 그대로", "왼쪽: 행마다 next() 왕복 → 호출 수 폭증\n오른쪽: 포트로 연결, 준비된 Processor만 실행\n실제 상태 6개, 교재는 3개로 단순화 (PortFull = 백프레셔)", "튜플 = 행 중심, Block = 컬럼 중심의 묶음\n필터 결과도 통과/탈락 표시 배열 하나", "numbers(1000000) + max_block_size 로 Block 크기 고정 (blockSize()로 확인)\nMergeTree는 Granule 8,192행보다 작게 안 읽어서 numbers()로 측정\n고정 비용(Processor 실행·포트 이동·함수 선택·컬럼 할당)이 Block마다 1번\n1,024~8,192행부터는 거의 안 빨라짐 → 캐시 크기 한계", "Processor = IProcessor를 상속한 소프트웨어 객체, 입력·출력 포트\nPipelineExecutor가 실행 가능한 Processor를 빈 스레드에 배정\n스레드는 work() 한 번 하고 다음 일감으로", "× 4 = 실행 레인 4개\n클수록 좋은 설정 아님 → 동시 쿼리 수와 같이 봐야", "CPU: i7-12700F = P코어 8 + E코어 4, 스레드 20\n8스레드까지 P코어에 하나씩 → CPU 총 사용 343→458ms로 거의 그대로\n16·20스레드: 하이퍼스레드가 코어 공유 + 느린 E코어 → CPU 총 사용 1,351·1,791ms\n메모리 1.75→30.8MiB: 레인별 해시 테이블 (책 3.5.2)\nBlock 실행 = 기본 속도, 병렬 = 데이터가 클 때 그 위에 곱해짐", "정렬 키 (event_time, status), 100만 행\n8,192 = Granule 1개\nGROUP BY in-order는 왜 기본 꺼짐? → 토론거리", "세 번째 숫자 1.0배의 답이 이 파트에", "Part 폴더 ls 결과 그대로\nNullable = 파일 하나 더\nTuple = 필드별 파일 → 필요한 필드만 읽음", "Nullable 정렬 키 → allow_nullable_key 에러 (직접 확인)\n값 없음 ≠ 0 이면 Nullable 유지\nLC 인덱스 폭 UInt8→16→32 자동 승격", "LZ4 1.0배 → Delta 202배 → DoubleDelta 860배 (25.8 실측)\n차이를 만들어 반복을 만든다\n막대는 로그 스케일", "system.codecs 로 직접 목록 확인\nChimp도 없음\n코덱 수치는 반드시 내 데이터로 측정", "MATERIALIZED에 값 넣으면 ILLEGAL_COLUMN (직접 확인)\nSELECT * 에 MAT/ALIAS 안 나옴\nPART 2 한 줄 요약 = 마지막 문장", "두 번째 숫자 3행의 답이 이 파트에", "Part 이름 = 파티션_최소블록_최대블록_레벨[_mutation]\nold_parts_lifetime 480초 / Too many parts 3,000\n안 지우는 이유 = 읽던 SELECT → PART 4 스냅샷으로 연결", "ALTER 직후 SELECT → 옛 값 (mutations_sync = 0)\n1행 수정에 3행 Part 전체 재작성\nDELETE FROM → rows 3 그대로, 머지 때 실제 삭제\n→ 키워드 심화 주제", "system.mutations + Part 이름으로 확인\n교재는 MODIFY를 코덱 위주로 설명 → 타입 변경은 재작성\nPART 3 요약: 수정 = 새 Part 작성 + 교체", "PARTITION BY toYYYYMM(event_time) 로 1년치 120만 행\n파티션 없는 테이블은 Part 이름이 all_…\n파티션 = 칸막이, 정렬 키 = 칸 안의 순서", "시간으로 정렬하면 정렬 키만으로 파티션과 거의 같은 효과\n파티션이 도움 된 건 정렬 키가 시간이 아닐 때\n메시지 원문: ORDER BY key is sufficient to make range queries fast", "오래된 달 지우기·옮기기(DROP / DETACH / MOVE PARTITION)가 파티션의 본업\nmax_partitions_per_insert_block = 100\n에러 메시지 권장: 테이블 전체 파티션 1,000~10,000 미만", "노드가 늘어도 단위는 여전히 Part", "ZooKeeper(Java, ZAB) vs Keeper(C++, Raft/NuRaft)\nKeeper는 로그 순서만 합의\n파일 전송은 서버 간 직접", "avg → 샤드는 (sum, n)만 전송\n평균의 평균 16.7 ≠ 정답 13.3\n오프로딩 4단계: 읽기 → 필터 → 부분 집계(핵심) → 정렬·LIMIT", "스냅샷 = 3-1의 “옛 Part 안 지움” 덕분\nINSERT ≠ 트랜잭션, Block 단위\ndedup은 Replicated 기준, 일반 MergeTree는 기본 꺼짐", "세 숫자 회수: 120배=정렬 키, 3행=Mutation 재작성, 1.0배=값이 다 달라서\n다음: 교재와 달랐던 것", "전부 25.8 Docker에서 재현 가능\n재현 SQL은 Notion 자료 페이지 실습 섹션", "문제마다 → 한 번 = 정답 공개, 한 번 더 = 다음 문제\n1인 1문제는 이 뒤에 각자", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "작은 UPDATE 남발 → 큐 적체\n대안: ReplacingMergeTree, TTL, DROP PARTITION"]</script>
 <script>
 (function () {
   var stage = document.getElementById('stage');
