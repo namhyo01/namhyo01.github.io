@@ -224,7 +224,7 @@ body:hover #hud { opacity: 1; }
 <section id="p3" style="background:#202124;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;justify-content:center;gap:40px">
 <p style="font-size:44px;font-weight:700;color:#5AA9E6;letter-spacing:2px">PART 3</p>
 <h1 style="font-size:120px;font-weight:700;line-height:1.1;color:#ECEDEF">불변인데 데이터는<br>어떻게 바뀌나?</h1>
-<p style="font-size:32px;line-height:1.4;color:#B4B9C2">Part의 일생 · Mutation · 가벼운 ALTER와 무거운 ALTER</p>
+<p style="font-size:32px;line-height:1.4;color:#B4B9C2">Part의 일생 · Mutation · ALTER · 파티션</p>
 </section>
 <section id="parts" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:32px">
 <p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 3 · Part의 일생</p>
@@ -255,6 +255,80 @@ body:hover #hud { opacity: 1; }
 <tr><td style="color:#ECEDEF">DROP COLUMN</td><td style="color:#F2A65A">있음</td><td>컬럼 파일 빠진 새 Part</td></tr>
 </table>
 <p style="font-size:32px;line-height:1.4;color:#B4B9C2">무중단 DDL = 메타데이터 변경 → 앱 배포 → 신규 데이터 → 필요하면 백필 → 옛 컬럼 제거</p>
+</section>
+<section id="partition" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 3 · 파티션</p>
+<h2 style="font-size:72px;font-weight:700;line-height:1.1;color:#ECEDEF">파티션은 Part를 나누는 칸막이</h2>
+<div style="display:flex;gap:48px;align-items:center">
+<div style="flex:3;display:flex;gap:24px">
+<div style="flex:1;display:flex;flex-direction:column;gap:16px;border:2px solid #34373d;border-radius:20px;padding:32px;align-items:center">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:28px;font-weight:700;color:#5AA9E6">202501</p>
+<p style="font-size:24px;color:#8A9099;background:#232428;border-radius:8px;padding:8px 16px">Part</p>
+<p style="font-size:24px;color:#8A9099;background:#232428;border-radius:8px;padding:8px 16px">Part</p>
+<p style="font-size:32px;color:#8A9099">↓ 머지</p>
+<p style="font-size:24px;font-weight:600;color:#191919;background:#5AA9E6;border-radius:8px;padding:8px 16px">Part 1개</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:16px;border:2px solid #34373d;border-radius:20px;padding:32px;align-items:center">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:28px;font-weight:700;color:#5AA9E6">202502</p>
+<p style="font-size:24px;color:#8A9099;background:#232428;border-radius:8px;padding:8px 16px">Part</p>
+<p style="font-size:24px;color:#8A9099;background:#232428;border-radius:8px;padding:8px 16px">Part</p>
+<p style="font-size:32px;color:#8A9099">↓ 머지</p>
+<p style="font-size:24px;font-weight:600;color:#191919;background:#5AA9E6;border-radius:8px;padding:8px 16px">Part 1개</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:16px;border:2px solid #34373d;border-radius:20px;padding:32px;align-items:center">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:28px;font-weight:700;color:#5AA9E6">202503</p>
+<p style="font-size:24px;color:#8A9099;background:#232428;border-radius:8px;padding:8px 16px">Part</p>
+<p style="font-size:24px;color:#8A9099;background:#232428;border-radius:8px;padding:8px 16px">Part</p>
+<p style="font-size:32px;color:#8A9099">↓ 머지</p>
+<p style="font-size:24px;font-weight:600;color:#191919;background:#5AA9E6;border-radius:8px;padding:8px 16px">Part 1개</p>
+</div>
+</div>
+<div style="flex:2;display:flex;flex-direction:column;gap:24px">
+<div style="display:flex;flex-direction:column;gap:8px;background:#232428;border-left:6px solid #5AA9E6;border-radius:12px;padding:32px">
+<h3 style="font-size:32px;font-weight:700;color:#ECEDEF">머지는 파티션을 넘지 않는다</h3>
+<p style="font-size:24px;line-height:1.4;color:#B4B9C2">Part 25개 → OPTIMIZE FINAL → 12개 = 월 파티션 수</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:8px;background:#232428;border-left:6px solid #5AA9E6;border-radius:12px;padding:32px">
+<h3 style="font-size:32px;font-weight:700;color:#ECEDEF">Part 이름 맨 앞 = 파티션 ID</h3>
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:28px;color:#ECEDEF">202501_1_14_1</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:8px;background:#232428;border-left:6px solid #8A9099;border-radius:12px;padding:32px">
+<h3 style="font-size:32px;font-weight:700;color:#ECEDEF">정렬 키는 Part 안의 순서</h3>
+<p style="font-size:24px;line-height:1.4;color:#B4B9C2">파티션은 Part를 나누고, 정렬 키는 그 안을 정렬한다</p>
+</div>
+</div>
+</div>
+</section>
+<section id="partition-read" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 3 · 파티션 · 25.8 실측</p>
+<h2 style="font-size:72px;font-weight:700;line-height:1.1;color:#ECEDEF">파티션은 조회 가속용이 아니다</h2>
+<table style="font-size:32px;color:#B4B9C2">
+<tr><th style="width:56%;color:#8A9099">한 달 조회 (120만 행 중)</th><th style="width:44%;color:#8A9099;text-align:right">읽은 행</th></tr>
+<tr><td style="color:#ECEDEF">파티션 없음 · ORDER BY user_id</td><td style="text-align:right;color:#F2A65A">1,200,000</td></tr>
+<tr><td style="color:#ECEDEF">월 파티션 · ORDER BY user_id</td><td style="text-align:right;color:#5AA9E6">101,918 (Part 1/13)</td></tr>
+<tr><td style="color:#ECEDEF">파티션 없음 · ORDER BY event_time</td><td style="text-align:right;color:#5AA9E6">122,880</td></tr>
+</table>
+<div style="display:flex;flex-direction:column;gap:12px;background:#232428;border-left:6px solid #F2A65A;border-radius:12px;padding:32px 40px">
+<p style="font-size:24px;font-weight:600;color:#8A9099">ClickHouse 25.8 에러 메시지 중</p>
+<p style="font-size:44px;font-weight:600;line-height:1.3;color:#ECEDEF">“partitioning is not intended to speed up SELECT queries”</p>
+</div>
+</section>
+<section id="partition-ops" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 3 · 파티션</p>
+<h2 style="font-size:72px;font-weight:700;line-height:1.1;color:#ECEDEF">파티션의 진짜 용도는 데이터 관리</h2>
+<div style="display:flex;gap:32px">
+<div style="flex:1;display:flex;flex-direction:column;gap:16px;background:#232428;border-top:6px solid #5AA9E6;border-radius:20px;padding:48px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:28px;color:#ECEDEF">ALTER TABLE pt DROP PARTITION 202501</p>
+<p style="font-size:120px;font-weight:700;line-height:1.1;color:#5AA9E6">Mutation 0</p>
+<p style="font-size:32px;line-height:1.4;color:#B4B9C2">11만 행이 Part째로 바로 사라진다</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:16px;background:#232428;border-top:6px solid #F2A65A;border-radius:20px;padding:48px">
+<p style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:28px;color:#ECEDEF">ALTER TABLE pt DELETE WHERE …</p>
+<p style="font-size:120px;font-weight:700;line-height:1.1;color:#F2A65A">Mutation 1</p>
+<p style="font-size:32px;line-height:1.4;color:#B4B9C2">대상 Part를 읽고 다시 쓴다</p>
+</div>
+</div>
+<p style="font-size:32px;line-height:1.4;color:#B4B9C2"><span style="color:#F2A65A">너무 잘게 나누면</span> — 일 단위 파티션에 1년치를 한 번에 넣으니 TOO_MANY_PARTS (한 INSERT당 100개 제한)</p>
 </section>
 <section id="p4" style="background:#202124;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;justify-content:center;gap:40px">
 <p style="font-size:44px;font-weight:700;color:#5AA9E6;letter-spacing:2px">PART 4</p>
@@ -352,11 +426,11 @@ body:hover #hud { opacity: 1; }
 </section>
 <section id="quiz" style="background:#202124;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;justify-content:center;gap:40px">
 <p style="font-size:44px;font-weight:700;color:#5AA9E6;letter-spacing:2px">QUIZ</p>
-<h1 style="font-size:120px;font-weight:700;line-height:1.1;color:#ECEDEF">퀴즈 12문제</h1>
+<h1 style="font-size:120px;font-weight:700;line-height:1.1;color:#ECEDEF">퀴즈 13문제</h1>
 <p style="font-size:32px;line-height:1.4;color:#B4B9C2">PART 1 → 4 순서 · 먼저 답해 보고 넘기면 정답</p>
 </section>
 <section id="quiz-01" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
-<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q1 / 12 · PART 1 · 옵티마이저</p>
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q1 / 13 · PART 1 · 옵티마이저</p>
 <h2 style="font-size:72px;font-weight:700;line-height:1.2;color:#ECEDEF">정렬 키가 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">event_time</span>일 때 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">WHERE toYear(event_time) = 2025</span>는 인덱스를 쓸 수 있을까?</h2>
 <div style="flex:1"></div>
 <div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px">
@@ -366,7 +440,7 @@ body:hover #hud { opacity: 1; }
 </div>
 </section>
 <section id="quiz-02" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
-<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q2 / 12 · PART 1 · 정렬 키</p>
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q2 / 13 · PART 1 · 정렬 키</p>
 <h2 style="font-size:72px;font-weight:700;line-height:1.2;color:#ECEDEF">정렬 키 (event_time, status), 100만 행. <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">ORDER BY event_time LIMIT 5</span>와 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">ORDER BY response_time LIMIT 5</span>가 읽는 행 수는 몇 배 차이날까?</h2>
 <div style="flex:1"></div>
 <div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px">
@@ -376,7 +450,7 @@ body:hover #hud { opacity: 1; }
 </div>
 </section>
 <section id="quiz-03" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
-<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q3 / 12 · PART 2 · 계산 컬럼</p>
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q3 / 13 · PART 2 · 계산 컬럼</p>
 <h2 style="font-size:72px;font-weight:700;line-height:1.2;color:#ECEDEF"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">SELECT *</span> 결과에 나오지 않는 컬럼은? (a) DEFAULT (b) MATERIALIZED (c) ALIAS</h2>
 <div style="flex:1"></div>
 <div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px">
@@ -386,7 +460,7 @@ body:hover #hud { opacity: 1; }
 </div>
 </section>
 <section id="quiz-04" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
-<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q4 / 12 · PART 2 · 날짜 타입</p>
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q4 / 13 · PART 2 · 날짜 타입</p>
 <h2 style="font-size:72px;font-weight:700;line-height:1.2;color:#ECEDEF"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">SELECT toDate('2149-06-07')</span>의 결과는?</h2>
 <div style="flex:1"></div>
 <div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px">
@@ -396,7 +470,7 @@ body:hover #hud { opacity: 1; }
 </div>
 </section>
 <section id="quiz-05" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
-<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q5 / 12 · PART 2 · LowCardinality</p>
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q5 / 13 · PART 2 · LowCardinality</p>
 <h2 style="font-size:72px;font-weight:700;line-height:1.2;color:#ECEDEF">국가 코드(약 200종)와 이메일 중 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">LowCardinality(String)</span>이 맞는 쪽은? 반대로 쓰면?</h2>
 <div style="flex:1"></div>
 <div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px">
@@ -406,7 +480,7 @@ body:hover #hud { opacity: 1; }
 </div>
 </section>
 <section id="quiz-06" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
-<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q6 / 12 · PART 2 · 코덱</p>
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q6 / 13 · PART 2 · 코덱</p>
 <h2 style="font-size:72px;font-weight:700;line-height:1.2;color:#ECEDEF">1분 간격으로 늘어나는 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">DateTime</span> 100만 개를 기본 코덱(LZ4)으로 저장하면 압축률은?</h2>
 <div style="flex:1"></div>
 <div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px">
@@ -416,7 +490,7 @@ body:hover #hud { opacity: 1; }
 </div>
 </section>
 <section id="quiz-07" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
-<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q7 / 12 · PART 3 · Mutation</p>
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q7 / 13 · PART 3 · Mutation</p>
 <h2 style="font-size:72px;font-weight:700;line-height:1.2;color:#ECEDEF"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">ALTER TABLE t UPDATE v = 1 WHERE id = 1</span> 직후 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">SELECT v FROM t WHERE id = 1</span>은 1일까?</h2>
 <div style="flex:1"></div>
 <div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px">
@@ -426,7 +500,7 @@ body:hover #hud { opacity: 1; }
 </div>
 </section>
 <section id="quiz-08" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
-<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q8 / 12 · PART 3 · Part 수명 주기</p>
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q8 / 13 · PART 3 · Part 수명 주기</p>
 <h2 style="font-size:72px;font-weight:700;line-height:1.2;color:#ECEDEF">OPTIMIZE로 병합된 뒤에도 원래 Part가 바로 지워지지 않는 이유 두 가지는?</h2>
 <div style="flex:1"></div>
 <div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px">
@@ -436,7 +510,7 @@ body:hover #hud { opacity: 1; }
 </div>
 </section>
 <section id="quiz-09" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
-<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q9 / 12 · PART 3 · DDL</p>
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q9 / 13 · PART 3 · DDL</p>
 <h2 style="font-size:72px;font-weight:700;line-height:1.2;color:#ECEDEF"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">MODIFY COLUMN c CODEC(ZSTD(3))</span>와 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">MODIFY COLUMN c Float64</span>(타입 변경) 중 기존 Part를 다시 쓰는 것은?</h2>
 <div style="flex:1"></div>
 <div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px">
@@ -446,7 +520,17 @@ body:hover #hud { opacity: 1; }
 </div>
 </section>
 <section id="quiz-10" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
-<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q10 / 12 · PART 4 · 분산 쿼리</p>
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q10 / 13 · PART 3 · 파티션</p>
+<h2 style="font-size:72px;font-weight:700;line-height:1.2;color:#ECEDEF"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">PARTITION BY toYYYYMM(event_time)</span>, <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">ORDER BY event_time</span> 테이블에서 한 달 조회가 빠른 건 파티션 덕분일까?</h2>
+<div style="flex:1"></div>
+<div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px">
+<p style="font-size:24px;font-weight:600;color:#F2A65A;letter-spacing:2px">정답</p>
+<p style="font-size:44px;font-weight:700;line-height:1.3;color:#ECEDEF">거의 아니다</p>
+<p style="font-size:32px;line-height:1.5;color:#B4B9C2">파티션 없이 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">ORDER BY event_time</span>만으로도 122,880행만 읽었다(파티션은 101,918행). 파티션의 주 용도는 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">DROP PARTITION</span> 같은 데이터 관리</p>
+</div>
+</section>
+<section id="quiz-11" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q11 / 13 · PART 4 · 분산 쿼리</p>
 <h2 style="font-size:72px;font-weight:700;line-height:1.2;color:#ECEDEF">Distributed 테이블에서 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">avg(x)</span>를 계산할 때 샤드는 무엇을 보낼까? 왜 샤드별 평균이면 안 될까?</h2>
 <div style="flex:1"></div>
 <div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px">
@@ -455,8 +539,8 @@ body:hover #hud { opacity: 1; }
 <p style="font-size:32px;line-height:1.5;color:#B4B9C2">샤드마다 행 수가 다르면 평균의 평균은 전체 평균과 다르다. 실측 예: 정답 13.3, 평균의 평균 16.7</p>
 </div>
 </section>
-<section id="quiz-11" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
-<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q11 / 12 · PART 4 · Keeper</p>
+<section id="quiz-12" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q12 / 13 · PART 4 · Keeper</p>
 <h2 style="font-size:72px;font-weight:700;line-height:1.2;color:#ECEDEF">ClickHouse Keeper는 Part 파일을 복제해 줄까?</h2>
 <div style="flex:1"></div>
 <div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px">
@@ -465,8 +549,8 @@ body:hover #hud { opacity: 1; }
 <p style="font-size:32px;line-height:1.5;color:#B4B9C2">Keeper는 “Part가 생겼다”는 로그와 메타데이터만 맞춘다. 파일은 레플리카끼리 직접 Fetch한다</p>
 </div>
 </section>
-<section id="quiz-12" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
-<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q12 / 12 · PART 4 · 일관성</p>
+<section id="quiz-13" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q13 / 13 · PART 4 · 일관성</p>
 <h2 style="font-size:72px;font-weight:700;line-height:1.2;color:#ECEDEF">300만 행을 INSERT 한 번으로 넣다가 서버가 죽었다. 0행 아니면 300만 행 중 하나만 남을까?</h2>
 <div style="flex:1"></div>
 <div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px">
@@ -484,7 +568,7 @@ body:hover #hud { opacity: 1; }
 <div id="notes" aria-live="polite"></div>
 <div id="bar"></div>
 <div id="hud"><button id="prev" aria-label="이전 슬라이드">◀</button><span id="num"></span><button id="next" aria-label="다음 슬라이드">▶</button><button id="nt" aria-label="발표 메모 보기">메모 (N)</button><button id="fs" aria-label="전체 화면">전체 화면</button></div>
-<script type="application/json" id="notes-data">["수치는 전부 직접 돌려본 결과", "퀴즈·토론은 Notion 자료 페이지에서", "세 숫자 모두 직접 측정\n답은 다음 장에서 한 문장으로", "immutable Part = 오늘의 유일한 키워드\n끝날 때 세 숫자를 다시 회수", "첫 번째 숫자 120배의 답이 이 파트 끝에", "앞 3단계 = 무엇을 할지(논리)\n뒤 3단계 = 저장 구조 보고 어떻게 할지(물리)\n5단계에서 레인 N개로 갈라졌다 합쳐짐", "EXPLAIN QUERY TREE dump_ast=1 로 확인\n상수 폴딩 / 산술 밖으로 / OR→IN / toYear→범위\n교재와 다른 점: OR 2개는 그대로", "왼쪽: 행마다 next() 왕복 → 호출 수 폭증\n오른쪽: 포트로 연결, 준비된 Processor만 실행\n실제 상태 6개, 교재는 3개로 단순화 (PortFull = 백프레셔)", "× 4 = 실행 레인 4개\n클수록 좋은 설정 아님 → 동시 쿼리 수와 같이 봐야", "정렬 키 (event_time, status), 100만 행\n8,192 = Granule 1개\nGROUP BY in-order는 왜 기본 꺼짐? → 토론거리", "세 번째 숫자 1.0배의 답이 이 파트에", "Part 폴더 ls 결과 그대로\nNullable = 파일 하나 더\nTuple = 필드별 파일 → 필요한 필드만 읽음", "Nullable 정렬 키 → allow_nullable_key 에러 (직접 확인)\n값 없음 ≠ 0 이면 Nullable 유지\nLC 인덱스 폭 UInt8→16→32 자동 승격", "LZ4 1.0배 → Delta 202배 → DoubleDelta 860배 (25.8 실측)\n차이를 만들어 반복을 만든다\n막대는 로그 스케일", "system.codecs 로 직접 목록 확인\nChimp도 없음\n코덱 수치는 반드시 내 데이터로 측정", "MATERIALIZED에 값 넣으면 ILLEGAL_COLUMN (직접 확인)\nSELECT * 에 MAT/ALIAS 안 나옴\nPART 2 한 줄 요약 = 마지막 문장", "두 번째 숫자 3행의 답이 이 파트에", "Part 이름 = 파티션_최소블록_최대블록_레벨[_mutation]\nold_parts_lifetime 480초 / Too many parts 3,000\n안 지우는 이유 = 읽던 SELECT → PART 4 스냅샷으로 연결", "ALTER 직후 SELECT → 옛 값 (mutations_sync = 0)\n1행 수정에 3행 Part 전체 재작성\nDELETE FROM → rows 3 그대로, 머지 때 실제 삭제\n→ 키워드 심화 주제", "system.mutations + Part 이름으로 확인\n교재는 MODIFY를 코덱 위주로 설명 → 타입 변경은 재작성\nPART 3 요약: 수정 = 새 Part 작성 + 교체", "노드가 늘어도 단위는 여전히 Part", "ZooKeeper(Java, ZAB) vs Keeper(C++, Raft/NuRaft)\nKeeper는 로그 순서만 합의\n파일 전송은 서버 간 직접", "avg → 샤드는 (sum, n)만 전송\n평균의 평균 16.7 ≠ 정답 13.3\n오프로딩 4단계: 읽기 → 필터 → 부분 집계(핵심) → 정렬·LIMIT", "스냅샷 = 3-1의 “옛 Part 안 지움” 덕분\nINSERT ≠ 트랜잭션, Block 단위\ndedup은 Replicated 기준, 일반 MergeTree는 기본 꺼짐", "세 숫자 회수: 120배=정렬 키, 3행=Mutation 재작성, 1.0배=값이 다 달라서\n다음: 교재와 달랐던 것", "전부 25.8 Docker에서 재현 가능\n재현 SQL은 Notion 자료 페이지 실습 섹션", "문제마다 → 한 번 = 정답 공개, 한 번 더 = 다음 문제\n1인 1문제는 이 뒤에 각자", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "작은 UPDATE 남발 → 큐 적체\n대안: ReplacingMergeTree, TTL, DROP PARTITION"]</script>
+<script type="application/json" id="notes-data">["수치는 전부 직접 돌려본 결과", "퀴즈·토론은 Notion 자료 페이지에서", "세 숫자 모두 직접 측정\n답은 다음 장에서 한 문장으로", "immutable Part = 오늘의 유일한 키워드\n끝날 때 세 숫자를 다시 회수", "첫 번째 숫자 120배의 답이 이 파트 끝에", "앞 3단계 = 무엇을 할지(논리)\n뒤 3단계 = 저장 구조 보고 어떻게 할지(물리)\n5단계에서 레인 N개로 갈라졌다 합쳐짐", "EXPLAIN QUERY TREE dump_ast=1 로 확인\n상수 폴딩 / 산술 밖으로 / OR→IN / toYear→범위\n교재와 다른 점: OR 2개는 그대로", "왼쪽: 행마다 next() 왕복 → 호출 수 폭증\n오른쪽: 포트로 연결, 준비된 Processor만 실행\n실제 상태 6개, 교재는 3개로 단순화 (PortFull = 백프레셔)", "× 4 = 실행 레인 4개\n클수록 좋은 설정 아님 → 동시 쿼리 수와 같이 봐야", "정렬 키 (event_time, status), 100만 행\n8,192 = Granule 1개\nGROUP BY in-order는 왜 기본 꺼짐? → 토론거리", "세 번째 숫자 1.0배의 답이 이 파트에", "Part 폴더 ls 결과 그대로\nNullable = 파일 하나 더\nTuple = 필드별 파일 → 필요한 필드만 읽음", "Nullable 정렬 키 → allow_nullable_key 에러 (직접 확인)\n값 없음 ≠ 0 이면 Nullable 유지\nLC 인덱스 폭 UInt8→16→32 자동 승격", "LZ4 1.0배 → Delta 202배 → DoubleDelta 860배 (25.8 실측)\n차이를 만들어 반복을 만든다\n막대는 로그 스케일", "system.codecs 로 직접 목록 확인\nChimp도 없음\n코덱 수치는 반드시 내 데이터로 측정", "MATERIALIZED에 값 넣으면 ILLEGAL_COLUMN (직접 확인)\nSELECT * 에 MAT/ALIAS 안 나옴\nPART 2 한 줄 요약 = 마지막 문장", "두 번째 숫자 3행의 답이 이 파트에", "Part 이름 = 파티션_최소블록_최대블록_레벨[_mutation]\nold_parts_lifetime 480초 / Too many parts 3,000\n안 지우는 이유 = 읽던 SELECT → PART 4 스냅샷으로 연결", "ALTER 직후 SELECT → 옛 값 (mutations_sync = 0)\n1행 수정에 3행 Part 전체 재작성\nDELETE FROM → rows 3 그대로, 머지 때 실제 삭제\n→ 키워드 심화 주제", "system.mutations + Part 이름으로 확인\n교재는 MODIFY를 코덱 위주로 설명 → 타입 변경은 재작성\nPART 3 요약: 수정 = 새 Part 작성 + 교체", "PARTITION BY toYYYYMM(event_time) 로 1년치 120만 행\n파티션 없는 테이블은 Part 이름이 all_…\n파티션 = 칸막이, 정렬 키 = 칸 안의 순서", "시간으로 정렬하면 정렬 키만으로 파티션과 거의 같은 효과\n파티션이 도움 된 건 정렬 키가 시간이 아닐 때\n메시지 원문: ORDER BY key is sufficient to make range queries fast", "오래된 달 지우기·옮기기(DROP / DETACH / MOVE PARTITION)가 파티션의 본업\nmax_partitions_per_insert_block = 100\n에러 메시지 권장: 테이블 전체 파티션 1,000~10,000 미만", "노드가 늘어도 단위는 여전히 Part", "ZooKeeper(Java, ZAB) vs Keeper(C++, Raft/NuRaft)\nKeeper는 로그 순서만 합의\n파일 전송은 서버 간 직접", "avg → 샤드는 (sum, n)만 전송\n평균의 평균 16.7 ≠ 정답 13.3\n오프로딩 4단계: 읽기 → 필터 → 부분 집계(핵심) → 정렬·LIMIT", "스냅샷 = 3-1의 “옛 Part 안 지움” 덕분\nINSERT ≠ 트랜잭션, Block 단위\ndedup은 Replicated 기준, 일반 MergeTree는 기본 꺼짐", "세 숫자 회수: 120배=정렬 키, 3행=Mutation 재작성, 1.0배=값이 다 달라서\n다음: 교재와 달랐던 것", "전부 25.8 Docker에서 재현 가능\n재현 SQL은 Notion 자료 페이지 실습 섹션", "문제마다 → 한 번 = 정답 공개, 한 번 더 = 다음 문제\n1인 1문제는 이 뒤에 각자", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "작은 UPDATE 남발 → 큐 적체\n대안: ReplacingMergeTree, TTL, DROP PARTITION"]</script>
 <script>
 (function () {
   var stage = document.getElementById('stage');
