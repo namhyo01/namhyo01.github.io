@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>덜 읽거나, 미리 줄이거나</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
+<style>
+* { box-sizing: border-box; margin: 0; }
+html, body { height: 100%; background: #111214; overflow: hidden; }
+#stage { position: absolute; left: 50%; top: 50%; width: 1920px; height: 1080px; transform-origin: 0 0; }
+#stage > section { position: absolute; inset: 0; width: 1920px; height: 1080px; overflow: hidden;
+  opacity: 0; visibility: hidden; transition: opacity .35s ease; }
+#stage > section.on { opacity: 1; visibility: visible; }
+[data-reveal] { opacity: 0; transform: translateY(24px); transition: opacity .35s ease, transform .35s ease; }
+[data-reveal].shown { opacity: 1; transform: none; }
+section h1, section h2, section h3, section p { margin: 0; }
+section table { border-collapse: collapse; width: 100%; }
+section th, section td { padding: .35em .6em; text-align: left; vertical-align: top; border-bottom: 1px solid #34373d; font-weight: 400; }
+section th { font-weight: 600; border-bottom: 2px solid #4a4e56; }
+section a { text-decoration: underline; }
+#bar { position: fixed; left: 0; bottom: 0; height: 4px; background: #5AA9E6; transition: width .3s ease; }
+#hud { position: fixed; right: 16px; bottom: 12px; font: 13px/1 'IBM Plex Sans KR', Arial, sans-serif; color: #8A9099;
+  display: flex; gap: 8px; align-items: center; opacity: .0; transition: opacity .3s; }
+body:hover #hud { opacity: 1; }
+#notes { position: fixed; left: 0; right: 0; bottom: 4px; max-height: 38vh; overflow: auto; display: none;
+  background: rgba(17,18,20,.94); border-top: 1px solid #34373d; padding: 16px 24px 20px;
+  font: 18px/1.6 'IBM Plex Sans KR', Arial, sans-serif; color: #ECEDEF; white-space: pre-line; }
+#notes.on { display: block; }
+#notes b { display: block; font-size: 13px; color: #5AA9E6; letter-spacing: 1px; margin-bottom: 6px; }
+#hud button { background: #232428; color: #ECEDEF; border: 1px solid #34373d; border-radius: 6px; padding: 6px 10px; cursor: pointer; font: inherit; }
+</style>
+</head>
+<body>
+<div id="stage">
+<section id="cover" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;justify-content:space-between;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">CLICKHOUSE STUDY · 7–8장</p>
+<div style="display:flex;flex-direction:column;gap:32px"><h1 style="font-size:116px;font-weight:700;line-height:1.1">덜 읽거나,<br>미리 줄이거나</h1><p style="font-size:44px;line-height:1.3;color:#B4B9C2">성능 최적화와 인덱싱 · Materialized View 파이프라인</p></div>
+<p style="font-size:24px;color:#8A9099">모든 결과는 ClickHouse 25.8 Docker에서 직접 실행</p>
+</section>
+<section id="agenda" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">목차</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">오늘 다룰 내용</h2>
+<table style="font-size:32px;color:#B4B9C2"><tr><th style="width:22%;color:#8A9099">구간</th><th style="width:78%;color:#8A9099">질문</th></tr><tr><td>오프닝</td><td>이상한 숫자 세 개</td></tr><tr><td style="color:#5AA9E6">PART 1</td><td>쿼리는 무엇을 건너뛰나? (파티션 · 희소 인덱스)</td></tr><tr><td style="color:#5AA9E6">PART 2</td><td>정렬 키 밖 조건은 어떻게 빠르게? (스킵 인덱스 · 프로젝션 · PREWHERE)</td></tr><tr><td style="color:#5AA9E6">PART 3</td><td>MV는 언제, 무엇을 실행하나?</td></tr><tr><td style="color:#5AA9E6">PART 4</td><td>집계 상태 · 연쇄 · 백필에서 생기는 함정</td></tr><tr><td>마무리</td><td>교재 vs 25.8 → 퀴즈 → 질문 리스트</td></tr></table>
+</section>
+<section id="numbers" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">오프닝</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">직접 돌려 보고 놀란 숫자 세 개</h2>
+<div style="display:flex;gap:32px;flex:1"><div style="flex:1;background:#232428;border-radius:20px;padding:40px;display:flex;flex-direction:column;gap:20px"><p style="font-size:96px;font-weight:700;color:#F2A65A;line-height:1">489 / 489</p><p style="font-size:30px;line-height:1.45;color:#ECEDEF">tokenbf_v1 인덱스를 걸고 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">LIKE '%timeout%'</span></p><p data-reveal style="font-size:26px;line-height:1.45;color:#B4B9C2">→ 인덱스가 Granule을 하나도 못 줄였다. <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">hasToken</span>이면 3 / 489</p></div><div style="flex:1;background:#232428;border-radius:20px;padding:40px;display:flex;flex-direction:column;gap:20px"><p style="font-size:96px;font-weight:700;color:#F2A65A;line-height:1">15 → 10</p><p style="font-size:30px;line-height:1.45;color:#ECEDEF">교재 DDL 그대로 만든 1분 집계 테이블의 요청 수, Merge 전 → 후</p><p data-reveal style="font-size:26px;line-height:1.45;color:#B4B9C2">→ 일반 UInt64 컬럼은 Merge 때 합쳐지지 않는다</p></div><div style="flex:1;background:#232428;border-radius:20px;padding:40px;display:flex;flex-direction:column;gap:20px"><p style="font-size:96px;font-weight:700;color:#F2A65A;line-height:1">2행</p><p style="font-size:30px;line-height:1.45;color:#ECEDEF">MV가 예외를 던져 클라이언트는 에러를 받았는데 소스 테이블 행 수</p><p data-reveal style="font-size:26px;line-height:1.45;color:#B4B9C2">→ MV 실패는 롤백이 아니다. 재시도하면 중복</p></div></div>
+</section>
+<section id="p1" style="background:#202124;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;justify-content:center;gap:40px">
+<p style="font-size:44px;font-weight:700;color:#5AA9E6;letter-spacing:2px">PART 1</p>
+<h1 style="font-size:116px;font-weight:700;line-height:1.1">쿼리는 무엇을<br>건너뛰나?</h1>
+<p style="font-size:34px;line-height:1.4;color:#B4B9C2">읽기 경로 4단 필터 · 희소 인덱스 · 정렬 키 순서 · 파티션 프루닝</p>
+</section>
+<section id="read-path" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 1 · 읽기 경로</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">네 단계가 각자 다른 크기의 단위를 지운다</h2>
+<div style="display:flex;gap:16px"><div style="flex:1;background:#232428;border-top:6px solid #5AA9E6;border-radius:16px;padding:28px 24px;display:flex;flex-direction:column;gap:12px"><p style="font-size:32px;font-weight:700;color:#ECEDEF">① 파티션 프루닝</p><p style="font-size:24px;line-height:1.45;color:#B4B9C2">읽을 <b style="color:#ECEDEF;font-weight:700">Part</b>를 통째로 제외<br>파티션 키 + <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">minmax_*.idx</span></p></div><div style="align-self:center;font-size:40px;color:#8A9099">→</div><div style="flex:1;background:#232428;border-top:6px solid #5AA9E6;border-radius:16px;padding:28px 24px;display:flex;flex-direction:column;gap:12px"><p style="font-size:32px;font-weight:700;color:#ECEDEF">② 희소 기본키</p><p style="font-size:24px;line-height:1.45;color:#B4B9C2">Part 안의 <b style="color:#ECEDEF;font-weight:700">Granule 범위</b><br><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">primary.cidx</span></p></div><div style="align-self:center;font-size:40px;color:#8A9099">→</div><div style="flex:1;background:#232428;border-top:6px solid #5AA9E6;border-radius:16px;padding:28px 24px;display:flex;flex-direction:column;gap:12px"><p style="font-size:32px;font-weight:700;color:#ECEDEF">③ 스킵 인덱스</p><p style="font-size:24px;line-height:1.45;color:#B4B9C2">정렬 키 밖 컬럼으로 <b style="color:#ECEDEF;font-weight:700">Granule 묶음</b><br><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">skp_idx_*.idx</span></p></div><div style="align-self:center;font-size:40px;color:#8A9099">→</div><div style="flex:1;background:#232428;border-top:6px solid #5AA9E6;border-radius:16px;padding:28px 24px;display:flex;flex-direction:column;gap:12px"><p style="font-size:32px;font-weight:700;color:#ECEDEF">④ PREWHERE</p><p style="font-size:24px;line-height:1.45;color:#B4B9C2">남은 범위에서 <b style="color:#ECEDEF;font-weight:700">어떤 컬럼을 먼저</b> 읽을지<br>(메타데이터 아님)</p></div></div>
+<div data-reveal style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">①~③은 메타데이터로 '읽기 전에' 지우고, ④는 '읽으면서' 큰 컬럼을 늦게 읽는다. 그 뒤 Mark로 위치를 찾아 필요한 컬럼 블록만 읽는다.</div>
+</section>
+<section id="sparse" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 1 · 희소 인덱스</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">인덱스는 행 주소록이 아니라 범위 필터</h2>
+<table style="font-size:32px;color:#B4B9C2"><tr><th style="width:18%;color:#8A9099"></th><th style="width:38%;color:#8A9099">MySQL InnoDB B-Tree</th><th style="width:44%;color:#8A9099">ClickHouse 희소 인덱스</th></tr><tr><td>단위</td><td>행 1개</td><td>Granule (8,192행)</td></tr><tr><td>결과</td><td>특정 행의 위치</td><td>읽어야 할 Granule 범위</td></tr><tr><td>크기</td><td>행 수에 비례</td><td style="color:#5AA9E6">Granule 수에 비례 — 400만 행에 490개</td></tr><tr><td>강점</td><td>점 조회 · 행 수정</td><td>대량 범위 스캔 · 집계</td></tr><tr><td>PK = 유일?</td><td>예</td><td style="color:#E06C75">❌ 아니다. 정렬 기준일 뿐</td></tr></table>
+<div style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">25.8 주의: <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">index_granularity_bytes</span> = 10 MiB → 행이 크면 Granule이 8,192행보다 작아진다. 파일은 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">primary.cidx</span>, <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">.cmrk2</span> (압축).</div>
+</section>
+<section id="sortkey" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 1 · 🔬 실측 · 400만 행, Granule 489개</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">정렬 키 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">(tenant_id, event_time, user_id)</span> — 앞에서부터 써야 줄어든다</h2>
+<table style="font-size:32px;color:#B4B9C2"><tr><th style="width:44%;color:#8A9099">조건</th><th style="width:26%;color:#8A9099">PrimaryKey 단계</th><th style="width:30%;color:#8A9099">검색 방식</th></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">tenant_id = 100 AND event_time</span> 1시간</td><td style="color:#7BC47F">✅ 1 / 489</td><td>binary search</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">user_id = 90001</span> (3번째 키만)</td><td style="color:#E06C75">❌ 489 / 489</td><td>generic exclusion search</td></tr><tr><td>→ 같은 조건, bloom_filter 스킵 인덱스</td><td style="color:#7BC47F">✅ 9 / 489</td><td>Skip: <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">idx_user</span></td></tr></table>
+<div style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">앞 컬럼을 건너뛰면 이분 탐색을 못 한다. 해결책: ① 정렬 키 재설계 ② 스킵 인덱스 ③ 다른 정렬의 프로젝션 — 쓰기 · 저장 비용이 각각 다르다.</div>
+</section>
+<section id="monotonic" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:32px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 1 · 🔬 실측 · 단조 함수</p>
+<h2 style="font-size:58px;font-weight:700;line-height:1.15;color:#ECEDEF"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">toDate(event_time) = …</span>도 인덱스를 쓸까?</h2>
+<div style="display:flex;gap:40px;align-items:flex-start"><pre style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;line-height:1.5;background:#232428;border-radius:16px;padding:28px 32px;color:#ECEDEF;white-space:pre-wrap;margin:0;flex:1.25">EXPLAIN indexes = 1
+SELECT count() FROM t2
+WHERE toDate(event_time) = &#x27;2024-07-02&#x27;;
+
+--   PrimaryKey
+--     Condition: (toDate(event_time)
+--                 in [19906, 19906])
+--     Granules: 2/122
+--     Search Algorithm: binary search</pre><div data-reveal style="flex:1"><table style="font-size:28px;color:#B4B9C2"><tr><th style="color:#8A9099">확인 방법</th><th style="color:#8A9099">변환이 보이나?</th></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">EXPLAIN SYNTAX</span></td><td style="color:#E06C75">❌ 그대로 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">toDate(...)</span></td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">EXPLAIN QUERY TREE</span></td><td style="color:#E06C75">❌ 그대로</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">EXPLAIN indexes = 1</span></td><td style="color:#7BC47F">✅ Condition · Granules</td></tr></table></div></div>
+<div data-reveal style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">교재: '<span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">EXPLAIN SYNTAX</span>로 확인' → 25.8에선 안 보인다. 인덱스를 썼는지는 <b style="color:#ECEDEF;font-weight:700"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">EXPLAIN indexes = 1</span></b> 이 정답.</div>
+</section>
+<section id="partition" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:32px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 1 · 🔬 실측 · 파티션 프루닝</p>
+<h2 style="font-size:58px;font-weight:700;line-height:1.15;color:#ECEDEF">12개월 중 3월만 — 11개 Part는 열어 보지도 않는다</h2>
+<div style="display:flex;gap:40px;align-items:flex-start"><pre style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;line-height:1.5;background:#232428;border-radius:16px;padding:28px 32px;color:#ECEDEF;white-space:pre-wrap;margin:0;flex:1.25">-- 월 파티션, 2024년 1~12월 (Part 12개)
+EXPLAIN indexes = 1
+SELECT count() FROM pm
+WHERE event_time &gt;= &#x27;2024-03-01&#x27;
+  AND event_time &lt;  &#x27;2024-04-01&#x27;;</pre><div data-reveal style="flex:1"><table style="font-size:28px;color:#B4B9C2"><tr><th style="color:#8A9099">단계</th><th style="color:#8A9099">Parts</th><th style="color:#8A9099">Granules</th></tr><tr><td>MinMax</td><td style="color:#7BC47F">✅ 1 / 12</td><td>11 / 124</td></tr><tr><td>Partition</td><td>1 / 1</td><td>11 / 11</td></tr><tr><td>PrimaryKey</td><td>1 / 1</td><td>11 / 11</td></tr></table></div></div>
+<div data-reveal style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">과한 파티셔닝 주의: <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">PARTITION BY user_id</span> → INSERT 한 번에 파티션 100개 초과 시 바로 에러 (<span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">max_partitions_per_insert_block</span> = 100). 시계열은 월 단위부터.</div>
+</section>
+<section id="p2" style="background:#202124;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;justify-content:center;gap:40px">
+<p style="font-size:44px;font-weight:700;color:#5AA9E6;letter-spacing:2px">PART 2</p>
+<h1 style="font-size:116px;font-weight:700;line-height:1.1">정렬 키 밖 조건은<br>어떻게 빠르게?</h1>
+<p style="font-size:34px;line-height:1.4;color:#B4B9C2">스킵 인덱스 다섯 가지 · 프로젝션 · PREWHERE · EXPLAIN</p>
+</section>
+<section id="skip-types" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 2 · 스킵 인덱스</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">Granule 묶음마다 요약값을 저장한다</h2>
+<table style="font-size:29px;color:#B4B9C2"><tr><th style="width:20%;color:#8A9099">타입</th><th style="width:18%;color:#8A9099">요약</th><th style="width:26%;color:#8A9099">적합</th><th style="width:36%;color:#8A9099">주의</th></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">minmax</span></td><td>최소 · 최대</td><td>정렬 키와 상관있는 값</td><td>값이 무작위면 효과 없음</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">set(N)</span></td><td>고유값 집합</td><td>저카디널리티</td><td>값이 모든 묶음에 있으면 효과 없음</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">bloom_filter</span></td><td>해시 비트 배열</td><td>고카디널리티 등가</td><td>거짓 양성 · 범위 불가</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">tokenbf_v1</span></td><td>토큰 블룸</td><td>로그의 <b style="color:#ECEDEF;font-weight:700">단어</b></td><td>토큰 경계가 맞아야</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">ngrambf_v1</span></td><td>N-gram 블룸</td><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">LIKE '%부분%'</span></td><td>검색어가 N보다 짧으면 안 씀</td></tr></table>
+<div style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">25.8에는 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">text</span>(전문 검색, 실험) · <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">vector_similarity</span> 등도 있다. 교재의 '다섯 가지'는 고전적 범위.</div>
+</section>
+<section id="skip-measure" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 2 · 🔬 실측 · 전체 Granule 489</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">선언했다고 쓰이는 게 아니다</h2>
+<table style="font-size:28px;color:#B4B9C2"><tr><th style="width:32%;color:#8A9099">조건</th><th style="width:18%;color:#8A9099">인덱스</th><th style="width:18%;color:#8A9099">결과</th><th style="width:32%;color:#8A9099">이유</th></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">user_id = 90001</span></td><td>bloom_filter</td><td style="color:#7BC47F">✅ 9 / 489</td><td>고카디널리티 등가</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">url LIKE '%checkout%'</span></td><td>ngrambf_v1</td><td style="color:#7BC47F">✅ 3 / 489</td><td>부분 문자열</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">message LIKE '%timeout%'</span></td><td>tokenbf_v1</td><td style="color:#E06C75">❌ 489 / 489</td><td>와일드카드 문자열 ≠ 완전한 토큰</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">hasToken(message, 'timeout')</span></td><td>tokenbf_v1</td><td style="color:#7BC47F">✅ 3 / 489</td><td>토큰 함수로 물어야</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">status = 500</span></td><td>set(100)</td><td style="color:#E06C75">❌ 489 / 489</td><td>500이 97행마다 → 모든 묶음에</td></tr></table>
+<div style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">교재의 tokenbf_v1 예시(<span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">LIKE '%timeout%'</span>)는 25.8에서 <b style="color:#ECEDEF;font-weight:700">효과 0</b>. set 인덱스는 '종류가 적은 값'이 아니라 '<b style="color:#ECEDEF;font-weight:700">몰려 있는 값</b>'에 효과가 있다.</div>
+</section>
+<section id="projection" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:32px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 2 · 🔬 실측 · 프로젝션</p>
+<h2 style="font-size:58px;font-weight:700;line-height:1.15;color:#ECEDEF">같은 테이블에 다른 정렬 경로를 하나 더</h2>
+<div style="display:flex;gap:40px;align-items:flex-start"><pre style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;line-height:1.5;background:#232428;border-radius:16px;padding:28px 32px;color:#ECEDEF;white-space:pre-wrap;margin:0;flex:1.25">ALTER TABLE pj ADD PROJECTION p_u
+  (SELECT * ORDER BY u);
+EXPLAIN projections = 1, indexes = 1
+SELECT count() FROM pj WHERE u = 5;
+
+ALTER TABLE pj MATERIALIZE PROJECTION p_u;
+-- 다시 EXPLAIN
+
+DELETE FROM pj WHERE k = 1;
+-- ❌ Code 344: not allowed ... has projections
+--   lightweight_mutation_projection_mode = THROW</pre><div data-reveal style="flex:1"><table style="font-size:28px;color:#B4B9C2"><tr><th style="color:#8A9099">시점</th><th style="color:#8A9099">읽는 경로</th><th style="color:#8A9099">Granules</th></tr><tr><td>ADD만</td><td>원본 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">s7.pj</span></td><td>12 / 12</td></tr><tr><td>MATERIALIZE 후</td><td style="color:#5AA9E6">프로젝션 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">p_u</span></td><td style="color:#7BC47F">✅ 1 / 12</td></tr><tr><td>DELETE FROM</td><td style="color:#E06C75">❌ 거부</td><td>—</td></tr></table></div></div>
+<div data-reveal style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">프로젝션 = 테이블 하나를 더 들고 다니는 결정. 저장 약 2배, Merge 비용, 그리고 <b style="color:#ECEDEF;font-weight:700">Lightweight DELETE/UPDATE 기본 거부</b> (교재에 없음).</div>
+</section>
+<section id="prewhere" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 2 · PREWHERE</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">직접 안 써도 이미 PREWHERE로 옮겨진다</h2>
+<table style="font-size:30px;color:#B4B9C2"><tr><th style="width:40%;color:#8A9099">설정</th><th style="width:16%;color:#8A9099">25.8 기본값</th><th style="width:44%;color:#8A9099">의미</th></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">optimize_move_to_prewhere</span></td><td style="color:#F2A65A">⚠️ 1</td><td>교재는 '켜면'이라고 쓰지만 이미 켜져 있음</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">move_all_conditions_to_prewhere</span></td><td>1</td><td>가능한 조건은 전부 PREWHERE로</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">enable_multiple_prewhere_read_steps</span></td><td>1</td><td>교재의 '컬럼별 순차 평가'</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">allow_reorder_prewhere_conditions</span></td><td>1</td><td>조건 순서를 비용 기준으로 재배치</td></tr></table>
+<div style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">🔬 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">WHERE status = 500 AND latency_ms &gt; 900</span> → <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">EXPLAIN actions = 1</span>에 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">Prewhere filter: and(equals(status, 500), greater(latency_ms, 900))</span>. 필터 컬럼만 먼저 읽고, 통과한 행만 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">user_id</span>, <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">message</span>를 읽는다.</div>
+</section>
+<section id="explain" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 2 · EXPLAIN</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">무엇을 확인하려면 어떤 EXPLAIN을 쓰나</h2>
+<table style="font-size:28px;color:#B4B9C2"><tr><th style="width:34%;color:#8A9099">모드</th><th style="width:32%;color:#8A9099">보는 것</th><th style="width:34%;color:#8A9099">25.8 실측 메모</th></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">EXPLAIN SYNTAX</span></td><td>재작성된 SQL</td><td style="color:#F2A65A">⚠️ Analyzer 최적화가 거의 안 보임</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">EXPLAIN QUERY TREE dump_ast = 1</span></td><td>Analyzer 쿼리 트리</td><td>상수 폴딩 · preimage 변환</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">EXPLAIN indexes = 1</span></td><td>단계별 Parts a/b · Granules c/d</td><td style="color:#7BC47F">✅ 인덱스 검증은 여기서</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">EXPLAIN projections = 1</span></td><td>프로젝션 선택 여부</td><td>교재에 없는 옵션</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">EXPLAIN PIPELINE</span></td><td>Processor · 병렬 레인</td><td style="color:#F2A65A">⚠️ <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">Resize</span>는 있고 Repartition · Exchange는 없음</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">EXPLAIN ESTIMATE</span></td><td>parts · rows · marks 추정</td><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">tenant_id = 100</span> → 1 · 16,384 · 2</td></tr></table>
+<div style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">측정할 때: 25.8은 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">use_query_condition_cache = 1</span>이 기본 → 같은 조건을 반복하면 두 번째부터 덜 읽어 보인다. 비교 실험은 꺼 두기.</div>
+</section>
+<section id="p3" style="background:#202124;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;justify-content:center;gap:40px">
+<p style="font-size:44px;font-weight:700;color:#5AA9E6;letter-spacing:2px">PART 3</p>
+<h1 style="font-size:116px;font-weight:700;line-height:1.1">MV는 언제,<br>무엇을 실행하나?</h1>
+<p style="font-size:34px;line-height:1.4;color:#B4B9C2">INSERT 트리거 · 실패 전파 · TO 패턴</p>
+</section>
+<section id="mv-is" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 3 · MV의 정체</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">저장된 SELECT가 아니라 INSERT에 붙은 트리거</h2>
+<table style="font-size:32px;color:#B4B9C2"><tr><th style="width:18%;color:#8A9099"></th><th style="width:34%;color:#8A9099">다른 DB의 MV</th><th style="width:48%;color:#8A9099">ClickHouse MV</th></tr><tr><td>언제</td><td>주기적으로 재계산</td><td style="color:#5AA9E6">소스에 INSERT가 들어올 때마다</td></tr><tr><td>입력</td><td>소스 전체</td><td style="color:#5AA9E6">방금 들어온 블록만</td></tr><tr><td>과거 데이터</td><td>반영</td><td style="color:#E06C75">❌ MV 생성 이전 데이터는 자동 반영 안 됨</td></tr><tr><td>GROUP BY</td><td>전체 기준</td><td style="color:#F2A65A">⚠️ 블록 안에서만 → 같은 키의 부분 결과가 여러 행</td></tr><tr><td>비용</td><td>별도 배치</td><td style="color:#F2A65A">⚠️ INSERT 지연에 그대로 더해짐</td></tr></table>
+<div style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">그래서 타깃 엔진(Summing / Aggregating)이 Merge 때 부분 결과를 다시 합쳐야 한다.</div>
+</section>
+<section id="mv-fail" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:32px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 3 · 🔬 실측 · 실패 전파</p>
+<h2 style="font-size:58px;font-weight:700;line-height:1.15;color:#ECEDEF">MV가 실패하면 소스는 롤백될까?</h2>
+<div style="display:flex;gap:40px;align-items:flex-start"><pre style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;line-height:1.5;background:#232428;border-radius:16px;padding:28px 32px;color:#ECEDEF;white-space:pre-wrap;margin:0;flex:1.25">CREATE TABLE src (x Int32) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE dst (y Int32) ENGINE = MergeTree ORDER BY y;
+CREATE MATERIALIZED VIEW mv_fail TO dst AS
+SELECT throwIf(x = 42, &#x27;boom&#x27;) + x AS y FROM src;
+
+INSERT INTO src VALUES (1), (42);
+-- ❌ Code 395: boom … while pushing to view</pre><div data-reveal style="flex:1"><table style="font-size:28px;color:#B4B9C2"><tr><th style="color:#8A9099">테이블</th><th style="color:#8A9099">행 수</th></tr><tr><td>src</td><td style="color:#F2A65A">⚠️ 2 — 이미 커밋</td></tr><tr><td>dst</td><td>0</td></tr></table></div></div>
+<div data-reveal style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">교재의 '원자적 체인'은 '하류 실패가 INSERT 응답을 실패로 만든다'까지만 맞다. 소스는 <b style="color:#ECEDEF;font-weight:700">부분 성공</b> → 클라이언트가 재시도하면 소스에 <b style="color:#ECEDEF;font-weight:700">중복</b>.</div>
+</section>
+<section id="to-pattern" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 3 · TO 패턴</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">타깃 테이블은 따로 만들고, MV는 라우팅만</h2>
+<table style="font-size:32px;color:#B4B9C2"><tr><th style="width:36%;color:#8A9099">구성 요소</th><th style="width:64%;color:#8A9099">책임</th></tr><tr><td>소스 테이블</td><td>원시 데이터 보존 · 재처리 기준</td></tr><tr><td>타깃 테이블</td><td>집계 결과 저장 · 파티션 · 정렬 키 · TTL</td></tr><tr><td>MV (<span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">TO target</span>)</td><td>INSERT 블록 변환과 라우팅만</td></tr><tr><td>자동 내부 테이블 (<span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">.inner_id.…</span>)</td><td style="color:#F2A65A">⚠️ 스키마 변경 · 백업 · 백필이 불편 → 교재는 안티패턴</td></tr></table>
+<div style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">🔬 교재 8.3.1 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">CREATE MATERIALIZED VIEW … ENGINE = SummingMergeTree() AS …</span> → ❌ <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">ORDER BY or PRIMARY KEY clause is missing</span>. 내부 테이블이라도 정렬 키는 필요하다.</div>
+</section>
+<section id="p4" style="background:#202124;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;justify-content:center;gap:40px">
+<p style="font-size:44px;font-weight:700;color:#5AA9E6;letter-spacing:2px">PART 4</p>
+<h1 style="font-size:116px;font-weight:700;line-height:1.1">집계 상태 · 연쇄 · 백필의<br>함정</h1>
+<p style="font-size:34px;line-height:1.4;color:#B4B9C2">-State / -Merge · 일반 컬럼 · 연쇄 MV · POPULATE · ATTACH PARTITION · JOIN</p>
+</section>
+<section id="state-fn" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 4 · 집계 상태</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">더할 수 없는 값은 상태로 저장한다</h2>
+<table style="font-size:24px;color:#B4B9C2"><tr><th style="width:24%;color:#8A9099">MV에서 저장</th><th style="width:36%;color:#8A9099">타깃 컬럼 타입</th><th style="width:22%;color:#8A9099">다음 단계 (연쇄)</th><th style="width:18%;color:#8A9099">최종 조회</th></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">uniqExactState(user_id)</span></td><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">AggregateFunction(uniqExact, UInt64)</span></td><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">uniqExactMergeState</span></td><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">uniqExactMerge</span></td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">quantileState(0.95)(lat)</span></td><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">AggregateFunction(quantile(0.95), Float32)</span></td><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">quantileMergeState(0.95)</span></td><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">quantileMerge(0.95)</span></td></tr><tr><td>단순 합계</td><td style="color:#5AA9E6"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">SimpleAggregateFunction(sum, UInt64)</span></td><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">sum</span></td><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">sum</span></td></tr></table>
+<div style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">UV 100 + UV 120 ≠ 전체 UV, p95의 평균 ≠ 전체 p95. <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">uniqExact</span>는 정확(상태가 큼), <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">uniq</span>는 근사, <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">quantile</span>도 <b style="color:#ECEDEF;font-weight:700">근사</b>(정확값은 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">quantileExact</span>).</div>
+</section>
+<section id="amt-trap" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:32px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 4 · 🔬 실측 · 가장 찾기 어려운 버그</p>
+<h2 style="font-size:58px;font-weight:700;line-height:1.15;color:#ECEDEF">교재 DDL의 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">total_requests UInt64</span>는 Merge 후 틀어진다</h2>
+<div style="display:flex;gap:40px;align-items:flex-start"><pre style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;line-height:1.5;background:#232428;border-radius:16px;padding:28px 32px;color:#ECEDEF;white-space:pre-wrap;margin:0;flex:1.25">-- 교재와 같은 1분 집계 타깃 + MV
+--   total_requests UInt64   ← 일반 컬럼
+--   error_count    UInt64   ← 일반 컬럼
+--   unique_users   AggregateFunction(uniqExact, UInt64)
+
+-- 같은 분 · 같은 테넌트로
+--   INSERT 1: 10건 (200)
+--   INSERT 2:  5건 (500)
+
+SELECT sum(total_requests), sum(error_count),
+       uniqExactMerge(unique_users) FROM agg1m;</pre><div data-reveal style="flex:1"><table style="font-size:28px;color:#B4B9C2"><tr><th style="color:#8A9099">시점</th><th style="color:#8A9099">요청</th><th style="color:#8A9099">에러</th><th style="color:#8A9099">UV</th></tr><tr><td>Merge 전</td><td style="color:#7BC47F">✅ 15</td><td style="color:#7BC47F">✅ 5</td><td style="color:#7BC47F">✅ 10</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">OPTIMIZE FINAL</span> 후</td><td style="color:#E06C75">❌ 10</td><td style="color:#E06C75">❌ 0</td><td style="color:#7BC47F">✅ 10</td></tr></table></div></div>
+<div data-reveal style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">AggregatingMergeTree는 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">AggregateFunction</span> / <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">SimpleAggregateFunction</span> 컬럼만 합치고, 일반 컬럼은 <b style="color:#ECEDEF;font-weight:700">한 행 값만 남긴다.</b> 개발 중엔 Merge가 늦어 안 보이고, 운영에서 대시보드 숫자가 줄어든다.</div>
+</section>
+<section id="cascade" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:32px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 4 · 🔬 실측 · 연쇄 MV</p>
+<h2 style="font-size:58px;font-weight:700;line-height:1.15;color:#ECEDEF">1분 테이블에 직접 백필하면 1시간 테이블은?</h2>
+<div style="display:flex;gap:40px;align-items:flex-start"><pre style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;line-height:1.5;background:#232428;border-radius:16px;padding:28px 32px;color:#ECEDEF;white-space:pre-wrap;margin:0;flex:1.25">CREATE TABLE l1 (h DateTime, c UInt64)
+  ENGINE = SummingMergeTree ORDER BY h;
+CREATE TABLE l2 (d Date, c UInt64)
+  ENGINE = SummingMergeTree ORDER BY d;
+CREATE MATERIALIZED VIEW mv_l2 TO l2 AS
+SELECT toDate(h) AS d, sum(c) AS c
+FROM l1 GROUP BY d;
+
+-- MV를 거치지 않은 &#x27;직접 백필&#x27;
+INSERT INTO l1 VALUES (&#x27;2024-01-01 01:00:00&#x27;, 7);
+SELECT sum(c) FROM l2;</pre><div data-reveal style="flex:1"><table style="font-size:28px;color:#B4B9C2"><tr><th style="color:#8A9099">l2 결과</th><th style="color:#8A9099"></th></tr><tr><td style="color:#5AA9E6">7</td><td>자동 전파됨</td></tr></table></div></div>
+<div data-reveal style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">연쇄 MV는 중간 테이블에 들어오는 <b style="color:#ECEDEF;font-weight:700">모든 INSERT</b>에 반응한다 (Merge에는 반응 안 함). 하류 테이블을 따로 또 백필하면 <b style="color:#ECEDEF;font-weight:700">두 번</b> 들어간다. 체인은 2~3단계 이내 (저자 권장).</div>
+</section>
+<section id="populate" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:32px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 4 · 🔬 실측 · 백필</p>
+<h2 style="font-size:58px;font-weight:700;line-height:1.15;color:#ECEDEF">POPULATE는 25.8에서 교재대로 안 된다</h2>
+<div style="display:flex;gap:40px;align-items:flex-start"><pre style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;line-height:1.5;background:#232428;border-radius:16px;padding:28px 32px;color:#ECEDEF;white-space:pre-wrap;margin:0;flex:1.25">CREATE MATERIALIZED VIEW mv_pop TO tgt POPULATE
+AS SELECT …;
+-- ❌ Code 62: you can&#x27;t declare both
+--    &#x27;TO [db].[table]&#x27; and &#x27;POPULATE&#x27;
+
+SELECT 1 SETTINGS
+  materialized_views_populate_atomically = 1;
+-- ❌ Code 115: neither a builtin setting …</pre><div data-reveal style="flex:1"><table style="font-size:28px;color:#B4B9C2"><tr><th style="color:#8A9099">무중단 백필 순서</th><th style="color:#8A9099"></th></tr><tr><td>1</td><td>빈 타깃 테이블 생성</td></tr><tr><td>2</td><td>신규 INSERT용 MV 생성</td></tr><tr><td>3</td><td>MV 이전 구간만 월 · 일 단위로 타깃에 직접 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">INSERT … SELECT</span></td></tr><tr><td>4</td><td>경계 구간 중복 · 누락 검증</td></tr></table></div></div>
+<div data-reveal style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">교재가 언급한 설정은 25.8에 <b style="color:#ECEDEF;font-weight:700">없다</b> (26.x 기능일 수 있음). 결론은 교재와 같다: 운영 백필은 <b style="color:#ECEDEF;font-weight:700">수동 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">INSERT … SELECT</span></b>.</div>
+</section>
+<section id="attach" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:32px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 4 · 🔬 실측 · ATTACH PARTITION</p>
+<h2 style="font-size:58px;font-weight:700;line-height:1.15;color:#ECEDEF">'O(1) 무중단 교체'라는데 정말 교체될까?</h2>
+<div style="display:flex;gap:40px;align-items:flex-start"><pre style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;line-height:1.5;background:#232428;border-radius:16px;padding:28px 32px;color:#ECEDEF;white-space:pre-wrap;margin:0;flex:1.25">CREATE TABLE a (d Date, v UInt64) ENGINE = MergeTree
+  PARTITION BY toYYYYMM(d) ORDER BY d;
+CREATE TABLE b AS a;
+INSERT INTO a VALUES (&#x27;2024-01-05&#x27;, 1);
+INSERT INTO b VALUES (&#x27;2024-01-05&#x27;, 100);
+
+ALTER TABLE a ATTACH PARTITION &#x27;202401&#x27; FROM b;
+
+ALTER TABLE a REPLACE PARTITION 202401 FROM b;</pre><div data-reveal style="flex:1"><table style="font-size:28px;color:#B4B9C2"><tr><th style="color:#8A9099">명령 후</th><th style="color:#8A9099">a의 값</th></tr><tr><td>ATTACH</td><td style="color:#F2A65A">⚠️ [100, 1] — 추가됨</td></tr><tr><td>REPLACE</td><td style="color:#7BC47F">✅ [100] — 교체됨</td></tr></table></div></div>
+<div data-reveal style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">ATTACH PARTITION … FROM</span>은 하드링크 <b style="color:#ECEDEF;font-weight:700">복사 · 추가</b>. 타깃에 같은 파티션이 있으면 <b style="color:#ECEDEF;font-weight:700">중복</b>. 교체가 목적이면 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">REPLACE PARTITION</span>.</div>
+</section>
+<section id="mv-join" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:32px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 4 · 🔬 실측 · MV 안의 JOIN</p>
+<h2 style="font-size:58px;font-weight:700;line-height:1.15;color:#ECEDEF">오른쪽 테이블이 바뀌면 집계도 바뀔까?</h2>
+<div style="display:flex;gap:40px;align-items:flex-start"><pre style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;line-height:1.5;background:#232428;border-radius:16px;padding:28px 32px;color:#ECEDEF;white-space:pre-wrap;margin:0;flex:1.25">CREATE MATERIALIZED VIEW mv_j TO seg_cnt AS
+SELECT u.seg AS seg, count() AS c
+FROM ev AS e JOIN users AS u
+  ON e.user_id = u.user_id
+GROUP BY seg;
+
+INSERT INTO users VALUES (1, &#x27;gold&#x27;);
+INSERT INTO ev VALUES (1);
+INSERT INTO users VALUES (2, &#x27;silver&#x27;);
+INSERT INTO ev VALUES (3);   -- users에 없음</pre><div data-reveal style="flex:1"><table style="font-size:28px;color:#B4B9C2"><tr><th style="color:#8A9099">seg_cnt</th><th style="color:#8A9099"></th></tr><tr><td>('gold', 1)</td><td>끝</td></tr></table></div></div>
+<div data-reveal style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">MV는 <b style="color:#ECEDEF;font-weight:700">FROM의 가장 왼쪽 테이블</b>(<span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">ev</span>) INSERT에만 반응한다. <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">users</span> 변경은 무시, 과거 결과도 재계산 안 됨. INNER JOIN이라 아직 없는 사용자의 이벤트는 <b style="color:#ECEDEF;font-weight:700">조용히 사라진다.</b></div>
+</section>
+<section id="summary" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">한 장 요약</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">덜 읽거나, 미리 줄이거나</h2>
+<table style="font-size:30px;color:#B4B9C2"><tr><th style="width:24%;color:#8A9099">질문</th><th style="width:76%;color:#8A9099">답</th></tr><tr><td>무엇을 건너뛰나?</td><td>파티션(Part) → 희소 인덱스(Granule) → 스킵 인덱스(묶음) → PREWHERE(컬럼 순서)</td></tr><tr><td>어떻게 확인하나?</td><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">EXPLAIN indexes = 1</span>의 Parts · Granules. SYNTAX로는 안 보인다</td></tr><tr><td>정렬 키 밖 조건은?</td><td>스킵 인덱스는 값이 몰려 있어야, 프로젝션은 DELETE를 막는다</td></tr><tr><td>MV는?</td><td>INSERT 블록에 붙은 트리거. 실패해도 소스는 커밋</td></tr><tr><td>집계 상태는?</td><td>상태는 AggregateFunction, 합계는 SimpleAggregateFunction</td></tr><tr><td>백필은?</td><td>수동 INSERT … SELECT. 연쇄는 자동 전파, ATTACH는 추가</td></tr></table>
+</section>
+<section id="diffs" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#F2A65A;letter-spacing:2px">교재 vs 25.8 실측</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">직접 해 보니 달랐던 것</h2>
+<table style="font-size:28px;color:#B4B9C2"><tr><th style="width:52%;color:#8A9099">교재</th><th style="width:48%;color:#8A9099">실제 (25.8)</th></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">EXPLAIN SYNTAX</span>로 단조 변환 확인</td><td style="color:#F2A65A">⚠️ 안 보임 → <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">EXPLAIN indexes = 1</span></td></tr><tr><td>tokenbf_v1 + <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">LIKE '%timeout%'</span></td><td style="color:#E06C75">❌ 489 / 489. <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">hasToken</span>이면 3 / 489</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">optimize_move_to_prewhere</span>를 켜면</td><td style="color:#F2A65A">⚠️ 이미 기본 1</td></tr><tr><td>PIPELINE의 Repartition · Exchange</td><td style="color:#F2A65A">⚠️ 25.8 출력에 없음</td></tr><tr><td>MV = 원자적 체인</td><td style="color:#F2A65A">⚠️ MV 실패해도 소스는 커밋</td></tr><tr><td>AggregatingMergeTree + <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">UInt64</span> 합계</td><td style="color:#E06C75">❌ Merge 후 15 → 10</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">TO … POPULATE</span></td><td style="color:#E06C75">❌ 문법 에러 · 설정도 없음</td></tr><tr><td>ATTACH PARTITION = 교체</td><td style="color:#F2A65A">⚠️ 추가 (교체는 REPLACE)</td></tr></table>
+</section>
+<section id="quiz" style="background:#202124;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;justify-content:center;gap:40px">
+<p style="font-size:44px;font-weight:700;color:#5AA9E6;letter-spacing:2px">QUIZ</p>
+<h1 style="font-size:116px;font-weight:700;line-height:1.1">퀴즈 11문제</h1>
+<p style="font-size:34px;line-height:1.4;color:#B4B9C2">→ 한 번 누르면 정답, 한 번 더 누르면 다음 문제</p>
+</section>
+<section id="quiz-01" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q1 / 11 · PART 1 · 정렬 키</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.25">정렬 키 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">(tenant_id, event_time, user_id)</span>에서 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">WHERE user_id = 90001</span>만 걸면?</h2>
+<div style="flex:1"></div>
+<div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px"><p style="font-size:24px;font-weight:600;color:#F2A65A;letter-spacing:2px">정답</p><p style="font-size:44px;font-weight:700;line-height:1.3">489 / 489, generic exclusion search</p><p style="font-size:30px;line-height:1.5;color:#B4B9C2">앞 컬럼을 건너뛰면 못 줄인다. bloom_filter 스킵 인덱스로 9 / 489.</p></div>
+</section>
+<section id="quiz-02" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q2 / 11 · PART 1 · 순서</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.25">파티션 프루닝 · 희소 인덱스 · 스킵 인덱스 · PREWHERE를 줄이는 단위가 큰 순서로?</h2>
+<div style="flex:1"></div>
+<div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px"><p style="font-size:24px;font-weight:600;color:#F2A65A;letter-spacing:2px">정답</p><p style="font-size:44px;font-weight:700;line-height:1.3">Part → Granule 범위 → Granule 묶음 → 컬럼 읽기 순서</p><p style="font-size:30px;line-height:1.5;color:#B4B9C2">PREWHERE만 메타데이터가 아닌 실행 전략.</p></div>
+</section>
+<section id="quiz-03" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q3 / 11 · PART 2 · tokenbf</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.25">tokenbf_v1 인덱스에서 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">LIKE '%timeout%'</span>과 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">hasToken(message, 'timeout')</span> 중 인덱스를 쓰는 쪽은?</h2>
+<div style="flex:1"></div>
+<div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px"><p style="font-size:24px;font-weight:600;color:#F2A65A;letter-spacing:2px">정답</p><p style="font-size:44px;font-weight:700;line-height:1.3"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">hasToken</span></p><p style="font-size:30px;line-height:1.5;color:#B4B9C2">실측 489 / 489 vs 3 / 489.</p></div>
+</section>
+<section id="quiz-04" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q4 / 11 · PART 2 · set</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.25"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">set(100)</span> 인덱스가 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">status = 500</span>에서 하나도 못 건너뛰었다. 왜?</h2>
+<div style="flex:1"></div>
+<div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px"><p style="font-size:24px;font-weight:600;color:#F2A65A;letter-spacing:2px">정답</p><p style="font-size:44px;font-weight:700;line-height:1.3">500이 모든 묶음에 있어서</p><p style="font-size:30px;line-height:1.5;color:#B4B9C2">값 종류가 적어도 골고루 퍼져 있으면 효과가 없다.</p></div>
+</section>
+<section id="quiz-05" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q5 / 11 · PART 2 · 프로젝션</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.25"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">ADD PROJECTION</span>만 하고 MATERIALIZE를 안 하면 기존 데이터는?</h2>
+<div style="flex:1"></div>
+<div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px"><p style="font-size:24px;font-weight:600;color:#F2A65A;letter-spacing:2px">정답</p><p style="font-size:44px;font-weight:700;line-height:1.3">원본 경로로 읽는다</p><p style="font-size:30px;line-height:1.5;color:#B4B9C2">실측 12 / 12 → MATERIALIZE 후 1 / 12.</p></div>
+</section>
+<section id="quiz-06" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q6 / 11 · PART 2 · 프로젝션</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.25">프로젝션이 있는 테이블에 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">DELETE FROM</span>을 하면? (25.8 기본)</h2>
+<div style="flex:1"></div>
+<div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px"><p style="font-size:24px;font-weight:600;color:#F2A65A;letter-spacing:2px">정답</p><p style="font-size:44px;font-weight:700;line-height:1.3">에러</p><p style="font-size:30px;line-height:1.5;color:#B4B9C2"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">lightweight_mutation_projection_mode = throw</span>.</p></div>
+</section>
+<section id="quiz-07" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q7 / 11 · PART 3 · 실패</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.25">MV가 예외를 던져 클라이언트가 에러를 받았다. 소스에는 들어갔을까?</h2>
+<div style="flex:1"></div>
+<div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px"><p style="font-size:24px;font-weight:600;color:#F2A65A;letter-spacing:2px">정답</p><p style="font-size:44px;font-weight:700;line-height:1.3">들어갔다</p><p style="font-size:30px;line-height:1.5;color:#B4B9C2">롤백 아님. 재시도하면 소스에 중복.</p></div>
+</section>
+<section id="quiz-08" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q8 / 11 · PART 4 · 일반 컬럼</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.25">AggregatingMergeTree에 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">total_requests UInt64</span>로 10, 5를 같은 키로 넣고 OPTIMIZE FINAL 후 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">sum</span>은?</h2>
+<div style="flex:1"></div>
+<div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px"><p style="font-size:24px;font-weight:600;color:#F2A65A;letter-spacing:2px">정답</p><p style="font-size:44px;font-weight:700;line-height:1.3">15가 아니다 (10)</p><p style="font-size:30px;line-height:1.5;color:#B4B9C2">일반 컬럼은 한 행 값만 남는다. <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">SimpleAggregateFunction(sum, UInt64)</span> 필요.</p></div>
+</section>
+<section id="quiz-09" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q9 / 11 · PART 4 · 연쇄</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.25">1분 테이블에 직접 백필했다. 1시간 테이블도 따로 백필해야 할까?</h2>
+<div style="flex:1"></div>
+<div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px"><p style="font-size:24px;font-weight:600;color:#F2A65A;letter-spacing:2px">정답</p><p style="font-size:44px;font-weight:700;line-height:1.3">하면 안 된다</p><p style="font-size:30px;line-height:1.5;color:#B4B9C2">1분 테이블 INSERT가 1시간 MV를 실행해 자동 전파된다.</p></div>
+</section>
+<section id="quiz-10" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q10 / 11 · PART 4 · ATTACH</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.25">타깃에 202401이 이미 있는데 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">ATTACH PARTITION '202401' FROM staging</span>을 하면?</h2>
+<div style="flex:1"></div>
+<div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px"><p style="font-size:24px;font-weight:600;color:#F2A65A;letter-spacing:2px">정답</p><p style="font-size:44px;font-weight:700;line-height:1.3">추가돼서 중복</p><p style="font-size:30px;line-height:1.5;color:#B4B9C2">교체는 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">REPLACE PARTITION</span>.</p></div>
+</section>
+<section id="quiz-11" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q11 / 11 · PART 4 · JOIN</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.25">MV 안에서 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">users</span>와 JOIN해 집계한다. 나중에 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">users.segment</span>를 바꾸면 과거 집계는?</h2>
+<div style="flex:1"></div>
+<div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px"><p style="font-size:24px;font-weight:600;color:#F2A65A;letter-spacing:2px">정답</p><p style="font-size:44px;font-weight:700;line-height:1.3">그대로</p><p style="font-size:30px;line-height:1.5;color:#B4B9C2">MV는 왼쪽 테이블 INSERT에만 반응. 재계산은 별도 백필.</p></div>
+</section>
+<section id="questions" style="background:#202124;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;justify-content:center;gap:40px">
+<p style="font-size:44px;font-weight:700;color:#5AA9E6;letter-spacing:2px">QUESTIONS</p>
+<h1 style="font-size:116px;font-weight:700;line-height:1.1">질문 리스트</h1>
+<p style="font-size:34px;line-height:1.4;color:#B4B9C2">정답이 없는 질문들 — 각자의 언어로 설명해 보기</p>
+</section>
+<section id="q-why" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">질문 리스트 1 / 3 · 왜 그렇게 동작할까?</p>
+<h2 style="font-size:60px;font-weight:700;line-height:1.15;color:#ECEDEF">왜 그렇게 동작할까?</h2>
+<div style="display:flex;flex-direction:column;gap:30px"><div style="display:flex;gap:28px;align-items:flex-start"><p style="font-size:40px;font-weight:700;color:#5AA9E6;min-width:72px">Q1</p><div style="display:flex;flex-direction:column;gap:8px"><p style="font-size:34px;line-height:1.35;color:#ECEDEF">희소 인덱스는 왜 행이 아니라 8,192행 Granule을 가리킬까? 점 조회에서 무엇을 포기했나?</p><p style="font-size:24px;line-height:1.45;color:#8A9099">인덱스 크기(400만 행 → 490개) vs 점 조회 시 최소 8,192행 읽기</p></div></div><div style="display:flex;gap:28px;align-items:flex-start"><p style="font-size:40px;font-weight:700;color:#5AA9E6;min-width:72px">Q2</p><div style="display:flex;flex-direction:column;gap:8px"><p style="font-size:34px;line-height:1.35;color:#ECEDEF">앞 컬럼을 건너뛴 조건은 왜 generic exclusion search가 될까? 어떤 데이터라면 그래도 줄일 수 있을까?</p><p style="font-size:24px;line-height:1.45;color:#8A9099">앞 컬럼의 카디널리티가 낮으면 일부 Granule은 지울 수 있다</p></div></div><div style="display:flex;gap:28px;align-items:flex-start"><p style="font-size:40px;font-weight:700;color:#5AA9E6;min-width:72px">Q3</p><div style="display:flex;flex-direction:column;gap:8px"><p style="font-size:34px;line-height:1.35;color:#ECEDEF">tokenbf_v1은 왜 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">LIKE '%timeout%'</span>에서 인덱스를 못 쓸까?</p><p style="font-size:24px;line-height:1.45;color:#8A9099"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">%</span> 앞뒤 문자열이 완전한 토큰인지 알 수 없다</p></div></div><div style="display:flex;gap:28px;align-items:flex-start"><p style="font-size:40px;font-weight:700;color:#5AA9E6;min-width:72px">Q4</p><div style="display:flex;flex-direction:column;gap:8px"><p style="font-size:34px;line-height:1.35;color:#ECEDEF">ClickHouse MV는 왜 주기적 재계산이 아니라 INSERT 트리거 방식을 택했을까?</p><p style="font-size:24px;line-height:1.45;color:#8A9099">블록만 읽으니 싸다 vs 과거 데이터 · JOIN 대상 변경을 반영 못 한다</p></div></div><div style="display:flex;gap:28px;align-items:flex-start"><p style="font-size:40px;font-weight:700;color:#5AA9E6;min-width:72px">Q5</p><div style="display:flex;flex-direction:column;gap:8px"><p style="font-size:34px;line-height:1.35;color:#ECEDEF">MV가 실패해도 소스를 롤백하지 않는 설계는 어떤 장점이 있을까?</p><p style="font-size:24px;line-height:1.45;color:#8A9099">원본 보존이 우선 · 여러 MV가 붙었을 때 하나 때문에 전체 실패?</p></div></div></div>
+</section>
+<section id="q-alt" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">질문 리스트 2 / 3 · 다른 방식이라면?</p>
+<h2 style="font-size:60px;font-weight:700;line-height:1.15;color:#ECEDEF">다른 방식으로 구현하면?</h2>
+<div style="display:flex;flex-direction:column;gap:30px"><div style="display:flex;gap:28px;align-items:flex-start"><p style="font-size:40px;font-weight:700;color:#5AA9E6;min-width:72px">Q6</p><div style="display:flex;flex-direction:column;gap:8px"><p style="font-size:34px;line-height:1.35;color:#ECEDEF"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">user_id</span> 단독 조회를 빠르게: 정렬 키 재설계 vs bloom_filter vs 프로젝션 — 무엇을 고를까?</p><p style="font-size:24px;line-height:1.45;color:#8A9099">쓰기 비용 · 저장 공간 · DELETE 가능 여부 · 다른 쿼리에 미치는 영향</p></div></div><div style="display:flex;gap:28px;align-items:flex-start"><p style="font-size:40px;font-weight:700;color:#5AA9E6;min-width:72px">Q7</p><div style="display:flex;flex-direction:column;gap:8px"><p style="font-size:34px;line-height:1.35;color:#ECEDEF">Refreshable MV(주기적 재계산)를 쓰면 MV 안 JOIN의 시점 문제는 해결될까? 대신 무엇을 잃나?</p><p style="font-size:24px;line-height:1.45;color:#8A9099">실시간성 · 재계산 비용</p></div></div><div style="display:flex;gap:28px;align-items:flex-start"><p style="font-size:40px;font-weight:700;color:#5AA9E6;min-width:72px">Q8</p><div style="display:flex;flex-direction:column;gap:8px"><p style="font-size:34px;line-height:1.35;color:#ECEDEF">합계 컬럼: <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">SimpleAggregateFunction(sum)</span> vs <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">AggregateFunction(sum)</span> vs SummingMergeTree — 차이는?</p><p style="font-size:24px;line-height:1.45;color:#8A9099">저장 크기 · 조회 문법 · uniq · 분위수를 같이 쓸 수 있나</p></div></div><div style="display:flex;gap:28px;align-items:flex-start"><p style="font-size:40px;font-weight:700;color:#5AA9E6;min-width:72px">Q9</p><div style="display:flex;flex-direction:column;gap:8px"><p style="font-size:34px;line-height:1.35;color:#ECEDEF">MV 체인 대신 1분 테이블에서 1시간 · 1일을 조회 시점에 집계하면?</p><p style="font-size:24px;line-height:1.45;color:#8A9099">체인 지연 · 장애 전파 vs 조회 비용</p></div></div></div>
+</section>
+<section id="q-ops" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">질문 리스트 3 / 3 · 실제 운영에서도?</p>
+<h2 style="font-size:60px;font-weight:700;line-height:1.15;color:#ECEDEF">실제 운영에서도 그럴까?</h2>
+<div style="display:flex;flex-direction:column;gap:30px"><div style="display:flex;gap:28px;align-items:flex-start"><p style="font-size:40px;font-weight:700;color:#5AA9E6;min-width:72px">Q10</p><div style="display:flex;flex-direction:column;gap:8px"><p style="font-size:34px;line-height:1.35;color:#ECEDEF">운영 중인 테이블에 프로젝션을 추가했더니 DELETE가 막혔다. 어떻게 할까?</p><p style="font-size:24px;line-height:1.45;color:#8A9099"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">lightweight_mutation_projection_mode</span> · ALTER DELETE · 파티션 DROP</p></div></div><div style="display:flex;gap:28px;align-items:flex-start"><p style="font-size:40px;font-weight:700;color:#5AA9E6;min-width:72px">Q11</p><div style="display:flex;flex-direction:column;gap:8px"><p style="font-size:34px;line-height:1.35;color:#ECEDEF">MV 5개가 붙은 테이블에 초당 수천 건 INSERT가 들어오면 INSERT 지연과 Part 수는?</p><p style="font-size:24px;line-height:1.45;color:#8A9099"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">parallel_view_processing</span> · 타깃마다 Part 생성</p></div></div><div style="display:flex;gap:28px;align-items:flex-start"><p style="font-size:40px;font-weight:700;color:#5AA9E6;min-width:72px">Q12</p><div style="display:flex;flex-direction:column;gap:8px"><p style="font-size:34px;line-height:1.35;color:#ECEDEF">이미 잘못된 스키마(일반 UInt64 합계)로 운영 중이라면 과거 데이터를 복구할 수 있을까?</p><p style="font-size:24px;line-height:1.45;color:#8A9099">Merge된 Part는 이미 값을 잃었다 → 원시 테이블에서 재백필</p></div></div><div style="display:flex;gap:28px;align-items:flex-start"><p style="font-size:40px;font-weight:700;color:#5AA9E6;min-width:72px">Q13</p><div style="display:flex;flex-direction:column;gap:8px"><p style="font-size:34px;line-height:1.35;color:#ECEDEF">백필과 실시간 INSERT의 경계 구간에서 중복 · 누락을 어떻게 검증할까?</p><p style="font-size:24px;line-height:1.45;color:#8A9099">MV 생성 시각 기록 · 원시 vs 집계 비교 · OPTIMIZE FINAL 후 재비교</p></div></div><div style="display:flex;gap:28px;align-items:flex-start"><p style="font-size:40px;font-weight:700;color:#5AA9E6;min-width:72px">Q14</p><div style="display:flex;flex-direction:column;gap:8px"><p style="font-size:34px;line-height:1.35;color:#ECEDEF">같은 쿼리를 반복 벤치마크하면 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">use_query_condition_cache</span>가 숫자를 어떻게 왜곡할까?</p><p style="font-size:24px;line-height:1.45;color:#8A9099">두 번째부터 Granule을 덜 읽는다 → 인덱스 효과로 착각</p></div></div></div>
+</section>
+<section id="discuss" style="background:#202124;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;justify-content:center;gap:40px">
+<p style="font-size:44px;font-weight:700;color:#5AA9E6;letter-spacing:2px">DISCUSSION</p>
+<h1 style="font-size:116px;font-weight:700;line-height:1.1">키워드 심화 ·<br>AggregatingMergeTree의 일반 컬럼</h1>
+<p style="font-size:34px;line-height:1.4;color:#B4B9C2">Merge 전엔 맞고 Merge 후에 틀린다 — 어떻게 테스트하고, 이미 틀렸으면 어떻게 고칠까?</p>
+</section>
+</div>
+<div id="notes" aria-live="polite"></div>
+<div id="bar"></div>
+<div id="hud"><button id="prev" aria-label="이전 슬라이드">◀</button><span id="num"></span><button id="next" aria-label="다음 슬라이드">▶</button><button id="nt" aria-label="발표 메모 보기">메모 (N)</button><button id="fs" aria-label="전체 화면">전체 화면</button></div>
+<script type="application/json" id="notes-data">["7장 = 읽을 때 덜 읽기, 8장 = 쓸 때 미리 줄여 두기", "", "489/489 → PART 2, 15→10 → PART 4, 2행 → PART 3", "", "", "", "EXPLAIN indexes = 1 로 확인", "", "", "오프닝 숫자 &#x27;489/489&#x27;의 답", "", "오프닝 숫자 489/489의 답", "", "", "", "오프닝 숫자 &#x27;2행&#x27;의 답", "", "materialized_views_ignore_errors = 0, parallel_view_processing = 0, deduplicate_blocks_in_dependent_materialized_views = 0", "", "오프닝 숫자 &#x27;15 → 10&#x27;의 답", "", "고친 버전 SimpleAggregateFunction(sum, UInt64) → 15", "", "", "", "", "", "16개 전체는 블로그 글 본문", "", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "스터디 원칙: 왜 그렇게 동작할까? / 다르게 구현하면? / 실제 운영에서도?", "Q1~Q5는 내부 동작 원리", "Q6~Q9는 설계 대안 비교", "Q10~Q14는 운영 시나리오", "개발 · QA는 Merge가 늦어서 통과 → OPTIMIZE FINAL 후 검증을 테스트에 넣기"]</script>
+<script>
+(function () {
+  var stage = document.getElementById('stage');
+  var slides = Array.prototype.slice.call(stage.children);
+  var bar = document.getElementById('bar');
+  var num = document.getElementById('num');
+  var notes = JSON.parse(document.getElementById('notes-data').textContent);
+  var notesEl = document.getElementById('notes');
+  var cur = 0;
+  function renderNotes() {
+    notesEl.innerHTML = '';
+    var h = document.createElement('b');
+    h.textContent = '발표 메모 · ' + (cur + 1) + ' / ' + slides.length;
+    notesEl.appendChild(h);
+    notesEl.appendChild(document.createTextNode(notes[cur] || '(메모 없음)'));
+  }
+  function toggleNotes() { notesEl.classList.toggle('on'); renderNotes(); }
+  function fit() {
+    var s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    stage.style.transform = 'scale(' + s + ') translate(-50%, -50%)';
+  }
+  function show(i, back) {
+    cur = Math.max(0, Math.min(slides.length - 1, i));
+    Array.prototype.forEach.call(slides[cur].querySelectorAll('[data-reveal]'), function (el) {
+      el.classList.toggle('shown', !!back);
+    });
+    slides.forEach(function (el, k) { el.classList.toggle('on', k === cur); });
+    bar.style.width = ((cur + 1) / slides.length * 100) + '%';
+    num.textContent = (cur + 1) + ' / ' + slides.length;
+    renderNotes();
+    if (location.hash !== '#' + (cur + 1)) history.replaceState(null, '', '#' + (cur + 1));
+  }
+  function next() {
+    var hidden = slides[cur].querySelectorAll('[data-reveal]:not(.shown)');
+    if (hidden.length) hidden[0].classList.add('shown');
+    else show(cur + 1);
+  }
+  function prev() { show(cur - 1, true); }
+  document.addEventListener('keydown', function (e) {
+    if (['ArrowRight', 'PageDown', ' ', 'Enter'].indexOf(e.key) >= 0) { e.preventDefault(); next(); }
+    else if (['ArrowLeft', 'PageUp', 'Backspace'].indexOf(e.key) >= 0) { e.preventDefault(); prev(); }
+    else if (e.key === 'Home') show(0);
+    else if (e.key === 'End') show(slides.length - 1);
+    else if (e.code === 'KeyF') toggleFs();
+    else if (e.code === 'KeyN') toggleNotes();
+  });
+  stage.addEventListener('click', function (e) {
+    if (e.target.closest('a')) return;
+    if (e.clientX > window.innerWidth / 2) next(); else prev();
+  });
+  var sx = null;
+  document.addEventListener('touchstart', function (e) { sx = e.touches[0].clientX; }, { passive: true });
+  document.addEventListener('touchend', function (e) {
+    if (sx === null) return;
+    var dx = e.changedTouches[0].clientX - sx;
+    if (Math.abs(dx) > 40) { if (dx < 0) next(); else prev(); }
+    sx = null;
+  });
+  function toggleFs() {
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+    else document.exitFullscreen();
+  }
+  document.getElementById('prev').onclick = prev;
+  document.getElementById('next').onclick = next;
+  document.getElementById('fs').onclick = toggleFs;
+  document.getElementById('nt').onclick = toggleNotes;
+  window.addEventListener('hashchange', function () {
+    var n = parseInt(location.hash.slice(1), 10);
+    if (n && n - 1 !== cur) show(n - 1);
+  });
+  window.addEventListener('resize', fit);
+  fit();
+  show((parseInt(location.hash.slice(1), 10) || 1) - 1);
+})();
+</script>
+</body>
+</html>

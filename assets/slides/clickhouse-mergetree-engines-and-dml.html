@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>INSERT가 아니라 Merge가 데이터를 바꾼다</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
+<style>
+* { box-sizing: border-box; margin: 0; }
+html, body { height: 100%; background: #111214; overflow: hidden; }
+#stage { position: absolute; left: 50%; top: 50%; width: 1920px; height: 1080px; transform-origin: 0 0; }
+#stage > section { position: absolute; inset: 0; width: 1920px; height: 1080px; overflow: hidden;
+  opacity: 0; visibility: hidden; transition: opacity .35s ease; }
+#stage > section.on { opacity: 1; visibility: visible; }
+[data-reveal] { opacity: 0; transform: translateY(24px); transition: opacity .35s ease, transform .35s ease; }
+[data-reveal].shown { opacity: 1; transform: none; }
+section h1, section h2, section h3, section p { margin: 0; }
+section table { border-collapse: collapse; width: 100%; }
+section th, section td { padding: .35em .6em; text-align: left; vertical-align: top; border-bottom: 1px solid #34373d; font-weight: 400; }
+section th { font-weight: 600; border-bottom: 2px solid #4a4e56; }
+section a { text-decoration: underline; }
+#bar { position: fixed; left: 0; bottom: 0; height: 4px; background: #5AA9E6; transition: width .3s ease; }
+#hud { position: fixed; right: 16px; bottom: 12px; font: 13px/1 'IBM Plex Sans KR', Arial, sans-serif; color: #8A9099;
+  display: flex; gap: 8px; align-items: center; opacity: .0; transition: opacity .3s; }
+body:hover #hud { opacity: 1; }
+#notes { position: fixed; left: 0; right: 0; bottom: 4px; max-height: 38vh; overflow: auto; display: none;
+  background: rgba(17,18,20,.94); border-top: 1px solid #34373d; padding: 16px 24px 20px;
+  font: 18px/1.6 'IBM Plex Sans KR', Arial, sans-serif; color: #ECEDEF; white-space: pre-line; }
+#notes.on { display: block; }
+#notes b { display: block; font-size: 13px; color: #5AA9E6; letter-spacing: 1px; margin-bottom: 6px; }
+#hud button { background: #232428; color: #ECEDEF; border: 1px solid #34373d; border-radius: 6px; padding: 6px 10px; cursor: pointer; font: inherit; }
+</style>
+</head>
+<body>
+<div id="stage">
+<section id="cover" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;justify-content:space-between;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">CLICKHOUSE STUDY · 5–6장</p>
+<div style="display:flex;flex-direction:column;gap:32px"><h1 style="font-size:116px;font-weight:700;line-height:1.1">INSERT가 아니라<br>Merge가 데이터를 바꾼다</h1><p style="font-size:44px;line-height:1.3;color:#B4B9C2">MergeTree 엔진 패밀리 · 고급 SQL과 DML</p></div>
+<p style="font-size:24px;color:#8A9099">모든 결과는 ClickHouse 25.8 Docker에서 직접 실행</p>
+</section>
+<section id="agenda" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">목차</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">오늘 다룰 내용</h2>
+<table style="font-size:34px;color:#B4B9C2"><tr><th style="width:22%;color:#8A9099">구간</th><th style="width:78%;color:#8A9099">질문</th></tr><tr><td>오프닝</td><td>이상한 숫자 세 개</td></tr><tr><td style="color:#5AA9E6">PART 1</td><td>Part는 디스크에 어떻게 생겼나?</td></tr><tr><td style="color:#5AA9E6">PART 2</td><td>엔진은 Merge 때 무엇을 하나?</td></tr><tr><td style="color:#5AA9E6">PART 3</td><td>지우고, 고치고, 만료시키기</td></tr><tr><td style="color:#5AA9E6">PART 4</td><td>쓰기 · JOIN · 분석 SQL의 비용</td></tr><tr><td>마무리</td><td>교재 vs 25.8 → 퀴즈 · 키워드 심화</td></tr></table>
+</section>
+<section id="numbers" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">오프닝</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">직접 돌려 보고 놀란 숫자 세 개</h2>
+<div style="display:flex;gap:32px;flex:1"><div style="flex:1;background:#232428;border-radius:20px;padding:40px;display:flex;flex-direction:column;gap:20px"><p style="font-size:96px;font-weight:700;color:#F2A65A;line-height:1">4행</p><p style="font-size:30px;line-height:1.45;color:#ECEDEF">ReplacingMergeTree에 같은 키 2개씩 넣고 바로 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">count()</span></p><p data-reveal style="font-size:26px;line-height:1.45;color:#B4B9C2">→ 중복 정리는 INSERT가 아니라 Merge 때. UNIQUE 제약이 아니다</p></div><div style="flex:1;background:#232428;border-radius:20px;padding:40px;display:flex;flex-direction:column;gap:20px"><p style="font-size:96px;font-weight:700;color:#F2A65A;line-height:1">2 / 4건</p><p style="font-size:30px;line-height:1.45;color:#ECEDEF">샤딩 키가 다른 두 Distributed 테이블을 로컬 JOIN</p><p data-reveal style="font-size:26px;line-height:1.45;color:#B4B9C2">→ 각 샤드가 자기 데이터끼리만 JOIN → 절반이 사라진다</p></div><div style="flex:1;background:#232428;border-radius:20px;padding:40px;display:flex;flex-direction:column;gap:20px"><p style="font-size:96px;font-weight:700;color:#F2A65A;line-height:1">2단계</p><p style="font-size:30px;line-height:1.45;color:#ECEDEF">A→B→C를 20분 간격으로, <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">windowFunnel(1800)</span></p><p data-reveal style="font-size:26px;line-height:1.45;color:#B4B9C2">→ 창은 직전 단계가 아니라 첫 단계부터 잰다</p></div></div>
+</section>
+<section id="p1" style="background:#202124;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;justify-content:center;gap:40px">
+<p style="font-size:44px;font-weight:700;color:#5AA9E6;letter-spacing:2px">PART 1</p>
+<h1 style="font-size:116px;font-weight:700;line-height:1.1">Part는 디스크에<br>어떻게 생겼나?</h1>
+<p style="font-size:34px;line-height:1.4;color:#B4B9C2">Part 이름 · 파일 · Compact와 Wide · LSM-Tree와의 차이</p>
+</section>
+<section id="part-name" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 1 · Part 해부</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">Part 이름만 봐도 일생이 보인다: <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">202408_1_5_2_3</span></h2>
+<table style="font-size:32px;color:#B4B9C2"><tr><th style="width:12%;color:#8A9099">위치</th><th style="width:20%;color:#8A9099">값</th><th style="width:68%;color:#8A9099">의미</th></tr><tr><td>1</td><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">202408</span></td><td>파티션 ID (<span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">toYYYYMM(...)</span> 결과)</td></tr><tr><td>2 · 3</td><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">1</span> · <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">5</span></td><td>이 Part가 담은 INSERT 블록 번호의 최소 · 최대</td></tr><tr><td>4</td><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">2</span></td><td>Merge 레벨. 합쳐질 때마다 +1</td></tr><tr><td>5</td><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">3</span></td><td>Mutation 버전. UPDATE/DELETE 후에만 붙음</td></tr></table>
+<div style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">Part는 <b style="color:#ECEDEF;font-weight:700">불변</b>이다. 바뀌는 건 언제나 '새 Part를 만들고 옛 Part를 비활성화'하는 방식.</div>
+</section>
+<section id="part-files" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 1 · Part 해부 · 🔬 25.8 실측</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">교재의 파일 이름과 25.8 실제 파일은 다르다</h2>
+<table style="font-size:30px;color:#B4B9C2"><tr><th style="width:30%;color:#8A9099">역할</th><th style="width:26%;color:#8A9099">교재</th><th style="width:44%;color:#8A9099">25.8 실제</th></tr><tr><td>컬럼 데이터</td><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">컬럼.bin</span></td><td style="color:#5AA9E6"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">컬럼.bin</span> (Wide) / <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">data.bin</span> (Compact)</td></tr><tr><td>Granule → 압축 블록 위치</td><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">.mrk2</span> · <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">.mrk3</span></td><td style="color:#F2A65A">⚠️ <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">.cmrk2</span> (Wide) / <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">data.cmrk4</span> (Compact)</td></tr><tr><td>희소 기본키 인덱스</td><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">primary.idx</span></td><td style="color:#F2A65A">⚠️ <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">primary.cidx</span></td></tr><tr><td>파티션 프루닝용 min/max</td><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">minmax_*.idx</span></td><td style="color:#5AA9E6"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">minmax_d.idx</span></td></tr><tr><td>행 수 · 컬럼 · 체크섬</td><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">count.txt</span> 등</td><td style="color:#5AA9E6">동일 + <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">serialization.json</span></td></tr></table>
+<div style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">25.8은 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">compress_marks = 1</span>, <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">compress_primary_key = 1</span>이 기본 → 이름 앞에 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">c</span>가 붙는다.</div>
+</section>
+<section id="compact-wide" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:32px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 1 · 🔬 실측</p>
+<h2 style="font-size:58px;font-weight:700;line-height:1.15;color:#ECEDEF">작은 INSERT는 Compact, 큰 INSERT는 Wide</h2>
+<div style="display:flex;gap:40px;align-items:flex-start"><pre style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;line-height:1.5;background:#232428;border-radius:16px;padding:28px 32px;color:#ECEDEF;white-space:pre-wrap;margin:0;flex:1.25">CREATE TABLE pf (d Date, k UInt64, s String)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(d) ORDER BY k;
+
+-- 1행
+INSERT INTO pf VALUES (&#x27;2024-08-01&#x27;, 1, &#x27;a&#x27;);
+-- 20만 행
+INSERT INTO pf
+SELECT &#x27;2024-08-02&#x27;, number,
+       repeat(&#x27;x&#x27;, 100)
+FROM numbers(200000);</pre><div data-reveal style="flex:1"><table style="font-size:28px;color:#B4B9C2"><tr><th style="color:#8A9099">Part</th><th style="color:#8A9099">형식</th><th style="color:#8A9099">행</th><th style="color:#8A9099">크기</th></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">202408_1_1_0</span></td><td style="color:#5AA9E6">Compact</td><td>1</td><td>416 B</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">202408_2_2_0</span></td><td style="color:#5AA9E6">Wide</td><td>200,000</td><td>863 KiB</td></tr></table></div></div>
+<div data-reveal style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">기준 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">min_bytes_for_wide_part</span> = 10 MiB (교재와 같음). Compact는 <b style="color:#ECEDEF;font-weight:700">파일 수</b>를 줄일 뿐, <b style="color:#ECEDEF;font-weight:700">Part 개수</b> 문제는 그대로.</div>
+</section>
+<section id="lsm" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 1 · LSM-Tree와 비교</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">LSM-Tree와 닮았지만 같지 않다</h2>
+<table style="font-size:32px;color:#B4B9C2"><tr><th style="width:20%;color:#8A9099"></th><th style="width:36%;color:#8A9099">전통적 LSM-Tree</th><th style="width:44%;color:#8A9099">ClickHouse MergeTree</th></tr><tr><td>데이터 단위</td><td>Memtable · SSTable</td><td>Part</td></tr><tr><td>계층</td><td>Level 0, 1, 2 …</td><td style="color:#5AA9E6">레벨 없음. 모든 Part가 병합 후보</td></tr><tr><td>병합 기준</td><td>Level 정책</td><td>Part 크기 · 개수 · 디스크 여유 · 비용</td></tr><tr><td>병합 목적</td><td>읽기 경로 정리</td><td style="color:#5AA9E6">정렬 통합 + 엔진별 변환</td></tr><tr><td>공통점</td><td>새로 쓰고 나중에 합침</td><td>→ 둘 다 쓰기 증폭이 생긴다</td></tr></table>
+</section>
+<section id="p2" style="background:#202124;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;justify-content:center;gap:40px">
+<p style="font-size:44px;font-weight:700;color:#5AA9E6;letter-spacing:2px">PART 2</p>
+<h1 style="font-size:116px;font-weight:700;line-height:1.1">엔진은 Merge 때<br>무엇을 하나?</h1>
+<p style="font-size:34px;line-height:1.4;color:#B4B9C2">Replacing · Summing · Aggregating · Collapsing — 같은 키의 행을 어떻게 바꾸나</p>
+</section>
+<section id="engines" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 2 · 엔진 선택</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">엔진 선택 = Merge 때 어떤 변환을 할지 고르는 것</h2>
+<table style="font-size:28px;color:#B4B9C2"><tr><th style="width:38%;color:#8A9099">엔진</th><th style="width:32%;color:#8A9099">Merge 때 하는 일</th><th style="width:30%;color:#8A9099">대표 용도</th></tr><tr><td>MergeTree</td><td>정렬 병합만</td><td>원시 로그 · 시계열</td></tr><tr><td>ReplacingMergeTree(ver, is_deleted)</td><td>같은 키 중 최신 버전만</td><td>CDC 최신 상태</td></tr><tr><td>SummingMergeTree</td><td>숫자 컬럼 합산</td><td>노출 · 클릭 · 비용 롤업</td></tr><tr><td>AggregatingMergeTree</td><td>집계 <b style="color:#ECEDEF;font-weight:700">상태</b> 결합</td><td>MV 기반 집계 (uniq · 분위수)</td></tr><tr><td>CollapsingMergeTree(Sign)</td><td>+1 / -1 쌍 상쇄</td><td>상태 · 취소 이벤트</td></tr><tr><td>VersionedCollapsingMergeTree</td><td>같은 버전끼리 +1/-1 상쇄</td><td>순서가 뒤섞이는 이벤트</td></tr></table>
+</section>
+<section id="replacing" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:32px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 2 · 🔬 실측 · ReplacingMergeTree</p>
+<h2 style="font-size:58px;font-weight:700;line-height:1.15;color:#ECEDEF">중복은 언제 사라지고, 톰스톤은 언제 지워지나</h2>
+<div style="display:flex;gap:40px;align-items:flex-start"><pre style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;line-height:1.5;background:#232428;border-radius:16px;padding:28px 32px;color:#ECEDEF;white-space:pre-wrap;margin:0;flex:1.25">CREATE TABLE r (id UInt64, ver UInt64,
+               del UInt8, name String)
+ENGINE = ReplacingMergeTree(ver, del)
+ORDER BY id;
+
+INSERT INTO r VALUES (1, 1, 0, &#x27;v1&#x27;);
+INSERT INTO r VALUES (1, 2, 0, &#x27;v2&#x27;);
+INSERT INTO r VALUES (2, 1, 0, &#x27;x&#x27;);
+INSERT INTO r VALUES (2, 2, 1, &#x27;x-deleted&#x27;);</pre><div data-reveal style="flex:1"><table style="font-size:28px;color:#B4B9C2"><tr><th style="color:#8A9099">시점</th><th style="color:#8A9099">결과</th></tr><tr><td>INSERT 직후 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">count()</span></td><td style="color:#F2A65A">⚠️ 4행 (아무것도 정리 안 됨)</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">FINAL</span> 조회</td><td style="color:#7BC47F">✅ (1, v2)만. id=2는 숨김</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">OPTIMIZE FINAL</span> 후 일반 조회</td><td style="color:#F2A65A">⚠️ (1, v2) + (2, x-deleted) — 톰스톤 남음</td></tr></table></div></div>
+<div data-reveal style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">교재: '<span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">is_deleted</span> 행은 Merge 때 제거될 수 있다' → 25.8 기본값에선 <b style="color:#ECEDEF;font-weight:700">안 지워진다.</b> <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">FINAL CLEANUP</span> + 실험 설정 필요. 그래서 항상 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">FINAL</span>로 읽어야 한다.</div>
+</section>
+<section id="final" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 2 · FINAL 운영</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">ReplacingMergeTree를 쓸 때 정해야 할 것</h2>
+<table style="font-size:30px;color:#B4B9C2"><tr><th style="width:44%;color:#8A9099">목표</th><th style="width:56%;color:#8A9099">설계</th></tr><tr><td>원본 변경 이벤트 보존</td><td>기본 MergeTree (원본 로그)</td></tr><tr><td>최신 상태 읽기 모델</td><td>ReplacingMergeTree</td></tr><tr><td>쿼리 시점 중복 제거</td><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">FINAL</span> 또는 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">argMax(col, ver)</span> 패턴</td></tr><tr><td>실시간 강한 유일성</td><td style="color:#E06C75">❌ ReplacingMergeTree만으로는 불가능</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">max_final_threads</span></td><td>기본 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">auto(코어 수)</span> — FINAL도 병렬</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">do_not_merge_across_partitions_select_final</span></td><td>기본 0. 1로 켜면 파티션 사이 중복은 남을 수 있음</td></tr></table>
+</section>
+<section id="summing" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:32px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 2 · 🔬 실측 · SummingMergeTree</p>
+<h2 style="font-size:58px;font-weight:700;line-height:1.15;color:#ECEDEF">숫자는 합쳐지고, 문자열은 하나만 남는다</h2>
+<div style="display:flex;gap:40px;align-items:flex-start"><pre style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;line-height:1.5;background:#232428;border-radius:16px;padding:28px 32px;color:#ECEDEF;white-space:pre-wrap;margin:0;flex:1.25">CREATE TABLE sm (k UInt64, c UInt64, label String)
+ENGINE = SummingMergeTree ORDER BY k;
+
+INSERT INTO sm VALUES (1, 10, &#x27;first&#x27;);
+INSERT INTO sm VALUES (1, 5, &#x27;second&#x27;);
+OPTIMIZE TABLE sm FINAL;
+SELECT * FROM sm;</pre><div data-reveal style="flex:1"><table style="font-size:28px;color:#B4B9C2"><tr><th style="color:#8A9099">k</th><th style="color:#8A9099">c</th><th style="color:#8A9099">label</th></tr><tr><td>1</td><td style="color:#7BC47F">✅ 15</td><td style="color:#F2A65A">⚠️ 'first'</td></tr></table></div></div>
+<div data-reveal style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">합칠 수 없는 값(uniq · 분위수 · 평균)이 필요하면 → <b style="color:#ECEDEF;font-weight:700">AggregatingMergeTree</b> + <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">-State</span> / <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">-Merge</span>.</div>
+</section>
+<section id="state-merge" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:32px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 2 · 🔬 실측 · AggregatingMergeTree</p>
+<h2 style="font-size:58px;font-weight:700;line-height:1.15;color:#ECEDEF">상태를 저장하고, 조회할 때 합친다</h2>
+<div style="display:flex;gap:40px;align-items:flex-start"><pre style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;line-height:1.5;background:#232428;border-radius:16px;padding:28px 32px;color:#ECEDEF;white-space:pre-wrap;margin:0;flex:1.25">-- 저장: quantilesState(0.5, 0.95)(x)
+
+-- 교재 예제
+SELECT quantilesMerge(q)(q) FROM ag;
+
+-- 고친 버전
+SELECT quantilesMerge(0.5, 0.95)(q) FROM ag;</pre><div data-reveal style="flex:1"><table style="font-size:28px;color:#B4B9C2"><tr><th style="color:#8A9099">쿼리</th><th style="color:#8A9099">결과</th></tr><tr><td>교재 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">quantilesMerge(q)(q)</span></td><td style="color:#E06C75">❌ Code 36: 파라미터는 상수여야</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">quantilesMerge(0.5, 0.95)(q)</span></td><td style="color:#7BC47F">✅ [49.5, 94.05]</td></tr></table></div></div>
+<div data-reveal style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">원본 → MV에서 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">uniqState</span> → <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">AggregateFunction</span> 컬럼(Part마다 부분 상태) → Merge가 상태 결합 → 조회 시 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">uniqMerge</span></div>
+</section>
+<section id="collapsing" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 2 · Collapsing 계열</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">취소가 먼저 도착하면?</h2>
+<table style="font-size:30px;color:#B4B9C2"><tr><th style="width:32%;color:#8A9099">상황</th><th style="width:30%;color:#8A9099">CollapsingMergeTree</th><th style="width:38%;color:#8A9099">VersionedCollapsingMergeTree</th></tr><tr><td>이벤트 순서가 안정적</td><td style="color:#7BC47F">✅ 사용 가능</td><td style="color:#7BC47F">✅ 사용 가능</td></tr><tr><td>취소(-1)가 상태(+1)보다 먼저 도착</td><td style="color:#E06C75">❌ 상쇄 실패 위험</td><td style="color:#7BC47F">✅ 같은 (키, Version)끼리 매칭</td></tr><tr><td>Kafka · 비동기 큐</td><td>순서 보장 필요</td><td>Version · Sign 규칙이 파이프라인 전체에서 일관돼야</td></tr><tr><td>같은 이벤트가 두 번 도착</td><td style="color:#E06C75">❌ 틀어짐</td><td style="color:#E06C75">❌ 틀어짐</td></tr></table>
+</section>
+<section id="p3" style="background:#202124;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;justify-content:center;gap:40px">
+<p style="font-size:44px;font-weight:700;color:#5AA9E6;letter-spacing:2px">PART 3</p>
+<h1 style="font-size:116px;font-weight:700;line-height:1.1">지우고, 고치고,<br>만료시키기</h1>
+<p style="font-size:34px;line-height:1.4;color:#B4B9C2">Mutation · Lightweight DELETE / UPDATE · TTL · 계층형 스토리지</p>
+</section>
+<section id="mutation-vs" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 3 · 세 가지 수정 방식</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">같은 'UPDATE'라도 디스크에서 일어나는 일이 다르다</h2>
+<table style="font-size:27px;color:#B4B9C2"><tr><th style="width:19%;color:#8A9099"></th><th style="width:27%;color:#8A9099">Mutation<br><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">ALTER … UPDATE/DELETE</span></th><th style="width:27%;color:#8A9099">Lightweight DELETE<br><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">DELETE FROM</span></th><th style="width:27%;color:#8A9099">🆕 Lightweight UPDATE<br><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">UPDATE … SET</span></th></tr><tr><td>처음에 하는 일</td><td>대상 Part를 새로 씀</td><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">_row_exists</span> 마스크 기록</td><td>바뀐 값만 담은 patch part</td></tr><tr><td>쓰기 I/O</td><td style="color:#E06C75">❌ 큼</td><td style="color:#7BC47F">✅ 작음</td><td style="color:#7BC47F">✅ 작음</td></tr><tr><td>물리 반영</td><td>새 Part 교체</td><td>이후 Merge</td><td>이후 Merge</td></tr><tr><td>25.8 기본</td><td>비동기 (<span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">mutations_sync = 0</span>)</td><td>동기 (<span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">lightweight_deletes_sync = 2</span>)</td><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">_block_number</span> 컬럼 필요</td></tr></table>
+</section>
+<section id="mutation-hardlink" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:32px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 3 · 🔬 실측 · Mutation</p>
+<h2 style="font-size:58px;font-weight:700;line-height:1.15;color:#ECEDEF">Mutation은 '전체 컬럼'을 다시 쓸까?</h2>
+<div style="display:flex;gap:40px;align-items:flex-start"><pre style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;line-height:1.5;background:#232428;border-radius:16px;padding:28px 32px;color:#ECEDEF;white-space:pre-wrap;margin:0;flex:1.25">CREATE TABLE mu (k UInt64, a String, b String)
+ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0;
+
+INSERT INTO mu SELECT number,
+  toString(number), toString(number)
+FROM numbers(1000);
+
+ALTER TABLE mu UPDATE a = &#x27;x&#x27; WHERE k = 1
+SETTINGS mutations_sync = 1;
+
+-- 새 Part all_1_1_0_2 에서
+-- stat -c &#x27;%h %n&#x27; *.bin</pre><div data-reveal style="flex:1"><table style="font-size:28px;color:#B4B9C2"><tr><th style="color:#8A9099">파일</th><th style="color:#8A9099">하드링크 수</th><th style="color:#8A9099">의미</th></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">a.bin</span></td><td style="color:#F2A65A">⚠️ 1</td><td>새로 씀</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">b.bin</span></td><td style="color:#7BC47F">✅ 2</td><td>옛 Part와 공유</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">k.bin</span></td><td style="color:#7BC47F">✅ 2</td><td>옛 Part와 공유</td></tr></table></div></div>
+<div data-reveal style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">교재: '전체 컬럼 파일을 다시 쓸 수 있다' → 실제는 <b style="color:#ECEDEF;font-weight:700">바뀐 컬럼만</b>. 그래도 1행 고치려고 그 Part의 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">a</span> 컬럼 <b style="color:#ECEDEF;font-weight:700">전체</b>를 다시 쓴다.</div>
+</section>
+<section id="lightweight" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:32px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 3 · 🔬 실측 · Lightweight</p>
+<h2 style="font-size:58px;font-weight:700;line-height:1.15;color:#ECEDEF">DELETE FROM과 UPDATE의 정체</h2>
+<div style="display:flex;gap:40px;align-items:flex-start"><pre style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;line-height:1.5;background:#232428;border-radius:16px;padding:28px 32px;color:#ECEDEF;white-space:pre-wrap;margin:0;flex:1.25">DELETE FROM ld WHERE k &lt; 3;
+SELECT command FROM system.mutations;
+-- (UPDATE _row_exists = 0 WHERE k &lt; 3)
+-- Part: all_1_1_0_2
+
+UPDATE lu SET v = &#x27;new&#x27; WHERE k = 1;
+-- ❌ needs materialized _block_number column
+
+CREATE TABLE lu2 (...) ENGINE = MergeTree ORDER BY k
+SETTINGS enable_block_number_column = 1,
+         enable_block_offset_column = 1;
+UPDATE lu2 SET v = &#x27;new&#x27; WHERE k = 1;   -- ✅</pre><div data-reveal style="flex:1"><table style="font-size:28px;color:#B4B9C2"><tr><th style="color:#8A9099">lu2의 Active Part</th><th style="color:#8A9099">행</th></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">all_1_1_0</span></td><td>5</td></tr><tr><td style="color:#5AA9E6"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">patch-…-all_3_3_0_2</span></td><td>1</td></tr></table></div></div>
+<div data-reveal style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">Lightweight DELETE = '마스크 컬럼을 쓰는 Mutation'. 디스크에서 즉시 사라지는 게 아니다 → 개인정보 파기는 Merge 완료까지 추적.</div>
+</section>
+<section id="ttl" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 3 · TTL</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">TTL은 삭제만 하는 게 아니다</h2>
+<table style="font-size:28px;color:#B4B9C2"><tr><th style="width:24%;color:#8A9099">TTL</th><th style="width:28%;color:#8A9099">하는 일</th><th style="width:48%;color:#8A9099">주의</th></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">… DELETE</span></td><td>만료 행 제거</td><td>Part 전체 만료일 때만 통째 삭제 (<span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">ttl_only_drop_parts = 0</span>)</td></tr><tr><td>컬럼 TTL</td><td>컬럼 값만 기본값으로</td><td>빈 문자열 · 0이 '원래 값'과 헷갈림</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">RECOMPRESS CODEC(...)</span></td><td>오래된 데이터 재압축</td><td>CPU · Merge 비용</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">GROUP BY … SET …</span></td><td>원본을 집계로 축소</td><td style="color:#F2A65A">⚠️ GROUP BY 키 = 정렬 키 접두사여야 (아니면 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">BAD_TTL_EXPRESSION</span>)</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">TO VOLUME</span></td><td>Hot → Cold 이동</td><td style="color:#F2A65A">⚠️ 교재 예시: XML 볼륨 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">cold</span> ≠ DDL <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">'s3_cold'</span></td></tr></table>
+<div style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">TTL은 별도 프로세스가 아니라 <b style="color:#ECEDEF;font-weight:700">Merge에 붙어서</b> 돈다. <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">merge_with_ttl_timeout</span> 기본 4시간 → 만료 즉시 사라지지 않는다.</div>
+</section>
+<section id="p4" style="background:#202124;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;justify-content:center;gap:40px">
+<p style="font-size:44px;font-weight:700;color:#5AA9E6;letter-spacing:2px">PART 4</p>
+<h1 style="font-size:116px;font-weight:700;line-height:1.1">쓰기 · JOIN · 분석 SQL의<br>비용</h1>
+<p style="font-size:34px;line-height:1.4;color:#B4B9C2">Part 폭증 · async_insert · 중복 제거 · JOIN · 콤비네이터 · 퍼널</p>
+</section>
+<section id="too-many-parts" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:32px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 4 · 🔬 실측 · Part 폭증</p>
+<h2 style="font-size:58px;font-weight:700;line-height:1.15;color:#ECEDEF">작은 INSERT를 반복하면 결국 거부된다</h2>
+<div style="display:flex;gap:40px;align-items:flex-start"><pre style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;line-height:1.5;background:#232428;border-radius:16px;padding:28px 32px;color:#ECEDEF;white-space:pre-wrap;margin:0;flex:1.25">CREATE TABLE tp (k UInt64) ENGINE = MergeTree
+ORDER BY k
+SETTINGS parts_to_throw_insert = 3,
+         parts_to_delay_insert = 2;
+SYSTEM STOP MERGES tp;
+
+INSERT INTO tp VALUES (1);
+INSERT INTO tp VALUES (2);
+INSERT INTO tp VALUES (3);
+INSERT INTO tp VALUES (4);
+-- ❌ Code 252: Too many parts (3 ...).
+--   Merges are processing significantly
+--   slower than inserts. (TOO_MANY_PARTS)</pre><div data-reveal style="flex:1"><table style="font-size:28px;color:#B4B9C2"><tr><th style="color:#8A9099">설정 (25.8)</th><th style="color:#8A9099">기본값</th></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">parts_to_delay_insert</span></td><td>1000 (파티션당)</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">parts_to_throw_insert</span></td><td>3000 (파티션당)</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">max_parts_in_total</span></td><td>100000 (테이블)</td></tr></table></div></div>
+<div data-reveal style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">교재의 'Too many parts in all data parts'는 테이블 전체 한도 쪽 메시지. 실제로 먼저 만나는 건 <b style="color:#ECEDEF;font-weight:700">파티션 단위</b> <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">TOO_MANY_PARTS</span>.</div>
+</section>
+<section id="async-insert" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 4 · async_insert · 🔬 25.8 기본값</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">서버가 대신 모아 준다 — 교재와 다른 기본값</h2>
+<table style="font-size:30px;color:#B4B9C2"><tr><th style="width:36%;color:#8A9099">설정</th><th style="width:24%;color:#8A9099">교재</th><th style="width:40%;color:#8A9099">25.8 실제</th></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">async_insert</span></td><td>—</td><td>0 (꺼짐)</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">async_insert_max_data_size</span></td><td>약 100KB ~ 1MB</td><td style="color:#F2A65A">⚠️ 10 MiB</td></tr><tr><td>busy timeout</td><td>200ms</td><td style="color:#F2A65A">⚠️ 50~200ms 적응형 (<span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">use_adaptive_busy_timeout = 1</span>)</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">async_insert_max_query_number</span></td><td>—</td><td>450 (쿼리 수로도 flush)</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">wait_for_async_insert</span></td><td>—</td><td>1 (flush까지 기다림)</td></tr></table>
+<div style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">wait_for_async_insert = 0</span>이면 서버 재시작 때 버퍼 <b style="color:#ECEDEF;font-weight:700">유실 가능</b>. async_insert는 입력량이 Merge 처리량을 넘는 문제를 <b style="color:#ECEDEF;font-weight:700">숨길 뿐</b> 해결하지 않는다.</div>
+</section>
+<section id="dedup" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:32px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 4 · 🔬 실측 · 멱등성</p>
+<h2 style="font-size:58px;font-weight:700;line-height:1.15;color:#ECEDEF">같은 토큰으로 두 번 INSERT하면 몇 행?</h2>
+<div style="display:flex;gap:40px;align-items:flex-start"><pre style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;line-height:1.5;background:#232428;border-radius:16px;padding:28px 32px;color:#ECEDEF;white-space:pre-wrap;margin:0;flex:1.25">CREATE TABLE d0 (k UInt64)
+ENGINE = MergeTree ORDER BY k;   -- 기본 설정
+
+INSERT INTO d0 SETTINGS
+  insert_deduplication_token = &#x27;t1&#x27; VALUES (1);
+INSERT INTO d0 SETTINGS
+  insert_deduplication_token = &#x27;t1&#x27; VALUES (1);
+
+-- d1: SETTINGS non_replicated_deduplication_window = 100</pre><div data-reveal style="flex:1"><table style="font-size:28px;color:#B4B9C2"><tr><th style="color:#8A9099">테이블</th><th style="color:#8A9099">결과</th></tr><tr><td>d0 (기본)</td><td style="color:#E06C75">❌ 2행 — 중복 그대로</td></tr><tr><td>d1 (window = 100)</td><td style="color:#7BC47F">✅ 1행</td></tr></table></div></div>
+<div data-reveal style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">non_replicated_deduplication_window</span> 기본 <b style="color:#ECEDEF;font-weight:700">0</b> → 일반 MergeTree는 중복 제거가 꺼져 있다. Replicated는 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">replicated_deduplication_window</span> <b style="color:#ECEDEF;font-weight:700">1000</b> (교재 '100개'는 옛 값).</div>
+</section>
+<section id="join-algo" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 4 · JOIN 알고리즘</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">오른쪽이 Build, 왼쪽이 Probe</h2>
+<table style="font-size:29px;color:#B4B9C2"><tr><th style="width:26%;color:#8A9099"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">join_algorithm</span></th><th style="width:42%;color:#8A9099">동작</th><th style="width:32%;color:#8A9099">언제</th></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">hash</span></td><td>오른쪽 전체를 메모리 해시 테이블로</td><td>오른쪽이 메모리에 들어감</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">parallel_hash</span></td><td>해시 테이블을 쪼개 병렬 Build/Probe</td><td>멀티코어 · 메모리 여유</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">grace_hash</span></td><td>버킷으로 나눠 디스크 스필</td><td>오른쪽이 메모리 초과</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">full_sorting_merge</span></td><td>양쪽 정렬 후 병합</td><td>아주 큼 · 이미 정렬</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">direct</span></td><td>Dictionary / KV 직접 조회</td><td>마스터 데이터</td></tr></table>
+<div style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">25.8 기본값 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">join_algorithm = 'direct,parallel_hash,hash'</span>, <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">query_plan_join_swap_table = 'auto'</span> → parallel_hash가 이미 기본이고, 작은 쪽을 <b style="color:#ECEDEF;font-weight:700">자동으로</b> Build로 바꾼다.</div>
+</section>
+<section id="dist-join" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 4 · 🔬 실측 · 2샤드 클러스터</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">샤딩 키가 다르면 정말 결과가 빠질까?</h2>
+<table style="font-size:30px;color:#B4B9C2"><tr><th style="width:34%;color:#8A9099">방식</th><th style="width:40%;color:#8A9099">결과</th><th style="width:26%;color:#8A9099">비용</th></tr><tr><td>데이터</td><td>hits: 샤드1 {2,4} · 샤드2 {1,3}<br>users: 샤드1 {1,2} · 샤드2 {3,4}</td><td></td></tr><tr><td>일반 JOIN (25.8 기본)</td><td style="color:#E06C75">❌ 에러: <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">distributed_product_mode = 'deny'</span></td><td>—</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">distributed_product_mode = 'local'</span></td><td style="color:#F2A65A">⚠️ 2 / 4건 (1·4번 누락)</td><td>네트워크 적음</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">GLOBAL JOIN</span></td><td style="color:#7BC47F">✅ 4 / 4건</td><td>오른쪽 결과 × 샤드 수 전송</td></tr></table>
+<div style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">교재: '각 샤드에서 로컬끼리 JOIN' → 25.8 기본값에선 <b style="color:#ECEDEF;font-weight:700">실행 자체가 거부</b>. 교재가 말한 동작(<span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">local</span>)은 실제로 데이터를 잃는다.</div>
+</section>
+<section id="combinators" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 4 · 집계 콤비네이터</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">접미사 하나로 집계 동작을 바꾼다</h2>
+<table style="font-size:30px;color:#B4B9C2"><tr><th style="width:24%;color:#8A9099">접미사</th><th style="width:40%;color:#8A9099">하는 일</th><th style="width:36%;color:#8A9099">예</th></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">-If</span></td><td>조건이 참인 행만</td><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">countIf(status = 200)</span></td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">-Array</span></td><td>배열을 펼치지 않고 집계</td><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">sumArray(prices)</span></td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">-State</span> / <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">-Merge</span></td><td>중간 상태 저장 / 합쳐서 최종 값</td><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">uniqState</span> → <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">uniqMerge</span></td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">-ForEach</span></td><td><b style="color:#ECEDEF;font-weight:700">여러 행의 배열</b>을 같은 위치끼리</td><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">sumForEach(arr)</span></td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">-Resample</span></td><td>키 범위를 고정 구간으로</td><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">avgResample(0, 86400, 3600)(v, key)</span></td></tr></table>
+</section>
+<section id="combinator-bugs" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:32px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 4 · 🔬 실측 · 교재 예제</p>
+<h2 style="font-size:58px;font-weight:700;line-height:1.15;color:#ECEDEF">교재 예제 두 개는 그대로 쓰면 틀린다</h2>
+<div style="display:flex;gap:40px;align-items:flex-start"><pre style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;line-height:1.5;background:#232428;border-radius:16px;padding:28px 32px;color:#ECEDEF;white-space:pre-wrap;margin:0;flex:1.25">SELECT sumForEach([1, 2, 3], [10, 20, 30]);
+-- ❌ sum requires single argument
+
+SELECT sumForEach(arr) FROM (
+  SELECT [1, 2, 3] AS arr
+  UNION ALL SELECT [10, 20, 30]);
+-- ✅ [11, 22, 33]
+
+SELECT avgResample(0, 86400, 3600)
+       (latency, event_time) FROM logs;
+-- ⚠️ [nan, nan, … nan]  24칸 전부
+-- DateTime = 유닉스 초(약 17억) → 0~86400 밖</pre></div>
+<div data-reveal style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">-ForEach</span>는 <b style="color:#ECEDEF;font-weight:700">행 사이</b> 집계. <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">-Resample</span>은 키를 하루 시작 기준 <b style="color:#ECEDEF;font-weight:700">상대 초</b>로 바꿔야 24칸이 찬다.</div>
+</section>
+<section id="funnel" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:32px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 4 · 🔬 실측 · windowFunnel</p>
+<h2 style="font-size:58px;font-weight:700;line-height:1.15;color:#ECEDEF">30분 창, 20분 간격 3단계 — 몇 단계까지 갔을까?</h2>
+<div style="display:flex;gap:40px;align-items:flex-start"><pre style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;line-height:1.5;background:#232428;border-radius:16px;padding:28px 32px;color:#ECEDEF;white-space:pre-wrap;margin:0;flex:1.25">INSERT INTO ev VALUES
+  (1, &#x27;2026-08-26 10:00:00&#x27;, &#x27;A&#x27;),
+  (1, &#x27;2026-08-26 10:20:00&#x27;, &#x27;B&#x27;),
+  (1, &#x27;2026-08-26 10:40:00&#x27;, &#x27;C&#x27;);
+
+SELECT windowFunnel(1800)(t,
+  e = &#x27;A&#x27;, e = &#x27;B&#x27;, e = &#x27;C&#x27;)
+FROM ev GROUP BY uid;</pre><div data-reveal style="flex:1"><table style="font-size:28px;color:#B4B9C2"><tr><th style="color:#8A9099">해석</th><th style="color:#8A9099">예상</th></tr><tr><td>교재: 직전 단계 기준</td><td>3</td></tr><tr><td>공식 문서: 첫 단계 기준</td><td>2</td></tr><tr><td style="color:#5AA9E6">25.8 실제</td><td>2</td></tr></table></div></div>
+<div data-reveal style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">창은 <b style="color:#ECEDEF;font-weight:700">첫 조건을 만족한 시점부터</b> 잰다. '30분 안에 결제까지' = 첫 조회 후 30분. 중복 · 같은 시각 처리 모드(<span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">strict_order</span> 등)도 교재엔 없다.</div>
+</section>
+<section id="retention-arrayjoin" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:32px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 4 · 🔬 실측 · retention · ARRAY JOIN</p>
+<h2 style="font-size:58px;font-weight:700;line-height:1.15;color:#ECEDEF">결과가 조용히 0이 되거나 행이 사라진다</h2>
+<div style="display:flex;gap:40px;align-items:flex-start"><pre style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;line-height:1.5;background:#232428;border-radius:16px;padding:28px 32px;color:#ECEDEF;white-space:pre-wrap;margin:0;flex:1.25">SELECT retention(0, 1, 1), retention(1, 0, 1);
+-- [0, 0, 0]   [1, 0, 1]
+
+SELECT id, x FROM (
+  SELECT 1 id, [10, 20] a
+  UNION ALL SELECT 2, []::Array(UInt8))
+ARRAY JOIN a AS x;
+-- (1, 10), (1, 20)         ← id = 2 사라짐
+
+... LEFT ARRAY JOIN a AS x;
+-- (1, 10), (1, 20), (2, 0)</pre></div>
+<div data-reveal style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">retention r[i] = <b style="color:#ECEDEF;font-weight:700">첫 조건 AND i번째 조건</b>. <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">ARRAY JOIN</span>은 빈 배열 행을 버린다 → 보존하려면 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">LEFT ARRAY JOIN</span>. 배열 N개 → N행이라 비용도 N배.</div>
+</section>
+<section id="summary" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">한 장 요약</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">INSERT가 아니라 Merge가 데이터를 바꾼다</h2>
+<table style="font-size:32px;color:#B4B9C2"><tr><th style="width:24%;color:#8A9099">질문</th><th style="width:76%;color:#8A9099">답</th></tr><tr><td>Part는?</td><td>불변. 이름에 파티션 · 블록 범위 · 레벨 · Mutation 버전</td></tr><tr><td>엔진은?</td><td>Merge 때 같은 키의 행을 어떻게 바꿀지 고르는 것</td></tr><tr><td>중복 · 삭제는?</td><td>Merge / FINAL 시점. 톰스톤은 기본 Merge로 안 지워짐</td></tr><tr><td>수정은?</td><td>Mutation(바뀐 컬럼 재작성) · LWD(마스크) · LWU(patch part)</td></tr><tr><td>쓰기는?</td><td>작은 INSERT → Part 폭증. async_insert · 배치 · 중복 제거 window</td></tr><tr><td>JOIN은?</td><td>오른쪽이 Build. 분산이면 샤딩 키 일치 or GLOBAL</td></tr></table>
+</section>
+<section id="diffs" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#F2A65A;letter-spacing:2px">교재 vs 25.8 실측</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">직접 해 보니 달랐던 것</h2>
+<table style="font-size:28px;color:#B4B9C2"><tr><th style="width:52%;color:#8A9099">교재</th><th style="width:48%;color:#8A9099">실제 (25.8)</th></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">is_deleted</span> 행은 Merge 때 제거</td><td style="color:#F2A65A">⚠️ OPTIMIZE FINAL로도 남음</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">quantilesMerge(quantiles)(quantiles)</span></td><td style="color:#E06C75">❌ 에러. 파라미터는 상수</td></tr><tr><td>Mutation = 전체 컬럼 재작성</td><td style="color:#F2A65A">⚠️ 바뀐 컬럼만 (하드링크)</td></tr><tr><td>async 버퍼 100KB ~ 1MB</td><td style="color:#F2A65A">⚠️ 10 MiB · 적응형 timeout</td></tr><tr><td>중복 제거 최근 100개</td><td style="color:#F2A65A">⚠️ 일반 MergeTree 0 (꺼짐) · Replicated 1000</td></tr><tr><td>Distributed끼리 JOIN = 로컬 JOIN</td><td style="color:#E06C75">❌ 기본 deny → 에러</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">sumForEach([..], [..])</span></td><td style="color:#E06C75">❌ 에러. 두 행으로 넣어야</td></tr><tr><td>windowFunnel: 직전 단계 기준</td><td style="color:#F2A65A">⚠️ 첫 단계 기준</td></tr></table>
+</section>
+<section id="quiz" style="background:#202124;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;justify-content:center;gap:40px">
+<p style="font-size:44px;font-weight:700;color:#5AA9E6;letter-spacing:2px">QUIZ</p>
+<h1 style="font-size:116px;font-weight:700;line-height:1.1">퀴즈 11문제</h1>
+<p style="font-size:34px;line-height:1.4;color:#B4B9C2">→ 한 번 누르면 정답, 한 번 더 누르면 다음 문제</p>
+</section>
+<section id="quiz-01" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q1 / 11 · PART 2 · Replacing</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.25">ReplacingMergeTree에 같은 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">id</span>로 버전 1, 2를 따로 INSERT한 직후 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">count()</span>는?</h2>
+<div style="flex:1"></div>
+<div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px"><p style="font-size:24px;font-weight:600;color:#F2A65A;letter-spacing:2px">정답</p><p style="font-size:44px;font-weight:700;line-height:1.3">2</p><p style="font-size:30px;line-height:1.5;color:#B4B9C2">중복 정리는 Merge 또는 FINAL 때. UNIQUE 제약이 아니다.</p></div>
+</section>
+<section id="quiz-02" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q2 / 11 · PART 2 · 톰스톤</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.25"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">ReplacingMergeTree(ver, is_deleted)</span>에서 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">OPTIMIZE FINAL</span>을 하면 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">is_deleted = 1</span> 행은 사라질까?</h2>
+<div style="flex:1"></div>
+<div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px"><p style="font-size:24px;font-weight:600;color:#F2A65A;letter-spacing:2px">정답</p><p style="font-size:44px;font-weight:700;line-height:1.3">아니다</p><p style="font-size:30px;line-height:1.5;color:#B4B9C2">FINAL 조회에서 숨겨질 뿐 물리적으로 남는다. <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">FINAL CLEANUP</span> + 실험 설정 필요.</p></div>
+</section>
+<section id="quiz-03" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q3 / 11 · PART 2 · Summing</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.25">SummingMergeTree에 (1, 10, 'first'), (1, 5, 'second')를 넣고 병합하면 label은?</h2>
+<div style="flex:1"></div>
+<div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px"><p style="font-size:24px;font-weight:600;color:#F2A65A;letter-spacing:2px">정답</p><p style="font-size:44px;font-weight:700;line-height:1.3">'first' 하나만</p><p style="font-size:30px;line-height:1.5;color:#B4B9C2">숫자만 15로 합산. 비숫자 컬럼은 하나만 남는다.</p></div>
+</section>
+<section id="quiz-04" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q4 / 11 · PART 3 · Mutation</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.25"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">ALTER … UPDATE a = 'x' WHERE k = 1</span> 후 새로 쓰이는 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">.bin</span> 파일은? (컬럼 a, b, k)</h2>
+<div style="flex:1"></div>
+<div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px"><p style="font-size:24px;font-weight:600;color:#F2A65A;letter-spacing:2px">정답</p><p style="font-size:44px;font-weight:700;line-height:1.3"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">a.bin</span>만</p><p style="font-size:30px;line-height:1.5;color:#B4B9C2"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">b.bin</span>, <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">k.bin</span>은 하드링크로 공유. 그래도 Part의 a 컬럼 전체를 다시 쓴다.</p></div>
+</section>
+<section id="quiz-05" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q5 / 11 · PART 3 · LWD</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.25"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">DELETE FROM t WHERE …</span>는 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">system.mutations</span>에 남을까?</h2>
+<div style="flex:1"></div>
+<div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px"><p style="font-size:24px;font-weight:600;color:#F2A65A;letter-spacing:2px">정답</p><p style="font-size:44px;font-weight:700;line-height:1.3">남는다</p><p style="font-size:30px;line-height:1.5;color:#B4B9C2"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">UPDATE _row_exists = 0 WHERE …</span> Mutation으로 기록, Part 이름에 버전이 붙는다.</p></div>
+</section>
+<section id="quiz-06" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q6 / 11 · PART 4 · 멱등성</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.25">일반 MergeTree에 같은 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">insert_deduplication_token</span>으로 두 번 INSERT하면? (기본 설정)</h2>
+<div style="flex:1"></div>
+<div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px"><p style="font-size:24px;font-weight:600;color:#F2A65A;letter-spacing:2px">정답</p><p style="font-size:44px;font-weight:700;line-height:1.3">2행</p><p style="font-size:30px;line-height:1.5;color:#B4B9C2"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">non_replicated_deduplication_window</span> 기본 0. 켜야 1행.</p></div>
+</section>
+<section id="quiz-07" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q7 / 11 · PART 4 · 분산 JOIN</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.25">25.8 기본 설정에서 Distributed 테이블끼리 GLOBAL 없이 JOIN하면?</h2>
+<div style="flex:1"></div>
+<div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px"><p style="font-size:24px;font-weight:600;color:#F2A65A;letter-spacing:2px">정답</p><p style="font-size:44px;font-weight:700;line-height:1.3">에러</p><p style="font-size:30px;line-height:1.5;color:#B4B9C2"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">distributed_product_mode = 'deny'</span>. local이면 누락, GLOBAL이면 정상.</p></div>
+</section>
+<section id="quiz-08" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q8 / 11 · PART 4 · 퍼널</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.25">A(10:00) → B(10:20) → C(10:40)에 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">windowFunnel(1800)</span>의 결과는?</h2>
+<div style="flex:1"></div>
+<div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px"><p style="font-size:24px;font-weight:600;color:#F2A65A;letter-spacing:2px">정답</p><p style="font-size:44px;font-weight:700;line-height:1.3">2</p><p style="font-size:30px;line-height:1.5;color:#B4B9C2">창은 첫 단계 기준. C는 A로부터 40분.</p></div>
+</section>
+<section id="quiz-09" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q9 / 11 · PART 4 · retention</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.25"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">retention(0, 1, 1)</span>의 결과는?</h2>
+<div style="flex:1"></div>
+<div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px"><p style="font-size:24px;font-weight:600;color:#F2A65A;letter-spacing:2px">정답</p><p style="font-size:44px;font-weight:700;line-height:1.3">[0, 0, 0]</p><p style="font-size:30px;line-height:1.5;color:#B4B9C2">첫(기준) 조건이 거짓이면 이후 플래그도 모두 0.</p></div>
+</section>
+<section id="quiz-10" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q10 / 11 · PART 4 · ARRAY JOIN</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.25"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">ARRAY JOIN</span> 후 행 수가 원본보다 줄었다. 왜?</h2>
+<div style="flex:1"></div>
+<div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px"><p style="font-size:24px;font-weight:600;color:#F2A65A;letter-spacing:2px">정답</p><p style="font-size:44px;font-weight:700;line-height:1.3">빈 배열 행이 사라져서</p><p style="font-size:30px;line-height:1.5;color:#B4B9C2">보존하려면 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">LEFT ARRAY JOIN</span>.</p></div>
+</section>
+<section id="quiz-11" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q11 / 11 · PART 4 · async_insert</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.25">async_insert를 켰는데 Merge backlog가 계속 는다. 한계는?</h2>
+<div style="flex:1"></div>
+<div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px"><p style="font-size:24px;font-weight:600;color:#F2A65A;letter-spacing:2px">정답</p><p style="font-size:44px;font-weight:700;line-height:1.3">빈도만 줄인다</p><p style="font-size:30px;line-height:1.5;color:#B4B9C2">입력량 자체가 Merge · 디스크 처리량을 넘으면 문제를 숨길 뿐.</p></div>
+</section>
+<section id="discuss" style="background:#202124;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;justify-content:center;gap:40px">
+<p style="font-size:44px;font-weight:700;color:#5AA9E6;letter-spacing:2px">DISCUSSION</p>
+<h1 style="font-size:116px;font-weight:700;line-height:1.1">키워드 심화 ·<br>ReplacingMergeTree와 FINAL</h1>
+<p style="font-size:34px;line-height:1.4;color:#B4B9C2">모든 쿼리에 FINAL? argMax 패턴? 톰스톤 CLEANUP은 언제? 파티션 키에 updated_at을 쓰면?</p>
+</section>
+</div>
+<div id="notes" aria-live="polite"></div>
+<div id="bar"></div>
+<div id="hud"><button id="prev" aria-label="이전 슬라이드">◀</button><span id="num"></span><button id="next" aria-label="다음 슬라이드">▶</button><button id="nt" aria-label="발표 메모 보기">메모 (N)</button><button id="fs" aria-label="전체 화면">전체 화면</button></div>
+<script type="application/json" id="notes-data">["교재 설명을 25.8에서 돌려 보고, 다르게 나온 건 전부 표시", "", "답은 각 PART에서. 4행 → PART 2, 2/4건 → PART 4, 2단계 → PART 4", "", "3·4장 복습: Part 이름 = 파티션_최소_최대_레벨[_mutation]", "docker exec 로 Part 디렉터리 ls 한 결과", "Part 수는 INSERT 배치 크기와 Merge 속도가 결정 → PART 4로 연결", "정확한 표현: LSM의 &#x27;새로 쓰고 나중에 합치는&#x27; 원리를 컬럼 분석 저장에 결합", "오프닝 숫자 &#x27;4행&#x27;의 답", "선택 기준은 편의가 아니라 &#x27;Merge 결과가 데이터의 의미를 지키는가&#x27;", "UNIQUE 제약 아님. 파티션이 다르면 영원히 중복", "", "&#x27;second&#x27;는 사라짐. 비숫자 컬럼을 믿어야 하면 Summing 금지", "저장할 때 쓴 파라미터를 조회할 때도 그대로", "GraphiteMergeTree는 Graphite 보존 규칙 전용. 일반 로그용 아님", "", "", "하드링크 수 2 = 옛 Part와 같은 파일", "Lightweight UPDATE는 교재 범위 밖. 25.8에서 테이블 설정 필요", "롤업 TTL은 정렬 키 설계부터 맞춰야 함", "오프닝 숫자 &#x27;2/4건&#x27;, &#x27;2단계&#x27;의 답", "INSERT 블록 1개 = Part 1개", "", "재시도 시 토큰을 새로 만들면 안 됨", "", "같은 서버를 127.0.0.1 / 127.0.0.2로 등록, 샤드마다 다른 DB", "", "toUInt32(event_time) - toUInt32(하루 시작) 으로 고치면 첫 칸 29.5", "오프닝 숫자 &#x27;2단계&#x27;의 답", "", "", "전부 25.8 Docker에서 재현 가능. 16개 전체는 블로그 글 본문", "", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "같은 키가 다른 파티션에 있으면 Merge로 영원히 안 합쳐짐\nFINAL 비용 vs argMax GROUP BY 비교"]</script>
+<script>
+(function () {
+  var stage = document.getElementById('stage');
+  var slides = Array.prototype.slice.call(stage.children);
+  var bar = document.getElementById('bar');
+  var num = document.getElementById('num');
+  var notes = JSON.parse(document.getElementById('notes-data').textContent);
+  var notesEl = document.getElementById('notes');
+  var cur = 0;
+  function renderNotes() {
+    notesEl.innerHTML = '';
+    var h = document.createElement('b');
+    h.textContent = '발표 메모 · ' + (cur + 1) + ' / ' + slides.length;
+    notesEl.appendChild(h);
+    notesEl.appendChild(document.createTextNode(notes[cur] || '(메모 없음)'));
+  }
+  function toggleNotes() { notesEl.classList.toggle('on'); renderNotes(); }
+  function fit() {
+    var s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    stage.style.transform = 'scale(' + s + ') translate(-50%, -50%)';
+  }
+  function show(i, back) {
+    cur = Math.max(0, Math.min(slides.length - 1, i));
+    Array.prototype.forEach.call(slides[cur].querySelectorAll('[data-reveal]'), function (el) {
+      el.classList.toggle('shown', !!back);
+    });
+    slides.forEach(function (el, k) { el.classList.toggle('on', k === cur); });
+    bar.style.width = ((cur + 1) / slides.length * 100) + '%';
+    num.textContent = (cur + 1) + ' / ' + slides.length;
+    renderNotes();
+    if (location.hash !== '#' + (cur + 1)) history.replaceState(null, '', '#' + (cur + 1));
+  }
+  function next() {
+    var hidden = slides[cur].querySelectorAll('[data-reveal]:not(.shown)');
+    if (hidden.length) hidden[0].classList.add('shown');
+    else show(cur + 1);
+  }
+  function prev() { show(cur - 1, true); }
+  document.addEventListener('keydown', function (e) {
+    if (['ArrowRight', 'PageDown', ' ', 'Enter'].indexOf(e.key) >= 0) { e.preventDefault(); next(); }
+    else if (['ArrowLeft', 'PageUp', 'Backspace'].indexOf(e.key) >= 0) { e.preventDefault(); prev(); }
+    else if (e.key === 'Home') show(0);
+    else if (e.key === 'End') show(slides.length - 1);
+    else if (e.code === 'KeyF') toggleFs();
+    else if (e.code === 'KeyN') toggleNotes();
+  });
+  stage.addEventListener('click', function (e) {
+    if (e.target.closest('a')) return;
+    if (e.clientX > window.innerWidth / 2) next(); else prev();
+  });
+  var sx = null;
+  document.addEventListener('touchstart', function (e) { sx = e.touches[0].clientX; }, { passive: true });
+  document.addEventListener('touchend', function (e) {
+    if (sx === null) return;
+    var dx = e.changedTouches[0].clientX - sx;
+    if (Math.abs(dx) > 40) { if (dx < 0) next(); else prev(); }
+    sx = null;
+  });
+  function toggleFs() {
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+    else document.exitFullscreen();
+  }
+  document.getElementById('prev').onclick = prev;
+  document.getElementById('next').onclick = next;
+  document.getElementById('fs').onclick = toggleFs;
+  document.getElementById('nt').onclick = toggleNotes;
+  window.addEventListener('hashchange', function () {
+    var n = parseInt(location.hash.slice(1), 10);
+    if (n && n - 1 !== cur) show(n - 1);
+  });
+  window.addEventListener('resize', fit);
+  fit();
+  show((parseInt(location.hash.slice(1), 10) || 1) - 1);
+})();
+</script>
+</body>
+</html>
