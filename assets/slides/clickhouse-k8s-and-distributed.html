@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>데이터는 노드끼리, 약속은 Keeper에</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
+<style>
+* { box-sizing: border-box; margin: 0; }
+html, body { height: 100%; background: #111214; overflow: hidden; }
+#stage { position: absolute; left: 50%; top: 50%; width: 1920px; height: 1080px; transform-origin: 0 0; }
+#stage > section { position: absolute; inset: 0; width: 1920px; height: 1080px; overflow: hidden;
+  opacity: 0; visibility: hidden; transition: opacity .35s ease; }
+#stage > section.on { opacity: 1; visibility: visible; }
+[data-reveal] { opacity: 0; transform: translateY(24px); transition: opacity .35s ease, transform .35s ease; }
+[data-reveal].shown { opacity: 1; transform: none; }
+section h1, section h2, section h3, section p { margin: 0; }
+section table { border-collapse: collapse; width: 100%; }
+section th, section td { padding: .35em .6em; text-align: left; vertical-align: top; border-bottom: 1px solid #34373d; font-weight: 400; }
+section th { font-weight: 600; border-bottom: 2px solid #4a4e56; }
+section a { text-decoration: underline; }
+#bar { position: fixed; left: 0; bottom: 0; height: 4px; background: #5AA9E6; transition: width .3s ease; }
+#hud { position: fixed; right: 16px; bottom: 12px; font: 13px/1 'IBM Plex Sans KR', Arial, sans-serif; color: #8A9099;
+  display: flex; gap: 8px; align-items: center; opacity: .0; transition: opacity .3s; }
+body:hover #hud { opacity: 1; }
+#notes { position: fixed; left: 0; right: 0; bottom: 4px; max-height: 38vh; overflow: auto; display: none;
+  background: rgba(17,18,20,.94); border-top: 1px solid #34373d; padding: 16px 24px 20px;
+  font: 18px/1.6 'IBM Plex Sans KR', Arial, sans-serif; color: #ECEDEF; white-space: pre-line; }
+#notes.on { display: block; }
+#notes b { display: block; font-size: 13px; color: #5AA9E6; letter-spacing: 1px; margin-bottom: 6px; }
+#hud button { background: #232428; color: #ECEDEF; border: 1px solid #34373d; border-radius: 6px; padding: 6px 10px; cursor: pointer; font: inherit; }
+</style>
+</head>
+<body>
+<div id="stage">
+<section id="cover" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;justify-content:space-between;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">CLICKHOUSE STUDY · 9–10장</p>
+<div style="display:flex;flex-direction:column;gap:32px"><h1 style="font-size:116px;font-weight:700;line-height:1.1">데이터는 노드끼리,<br>약속은 Keeper에</h1><p style="font-size:44px;line-height:1.3;color:#B4B9C2">K8s + Helm 프로덕션 배포 · 분산 아키텍처와 고가용성</p></div>
+<p style="font-size:24px;color:#8A9099">10장은 Keeper + 2샤드×2레플리카 Docker 클러스터에서 직접 실행 · 9장은 Altinity 소스·공식 문서로 대조</p>
+</section>
+<section id="agenda" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">목차</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">오늘 다룰 내용</h2>
+<table style="font-size:32px;color:#B4B9C2"><tr><th style="width:22%;color:#8A9099">구간</th><th style="width:78%;color:#8A9099">질문</th></tr><tr><td>오프닝</td><td>이상한 숫자 세 개</td></tr><tr><td style="color:#5AA9E6">PART 1</td><td>K8s에 ClickHouse를 올릴 때 무엇이 깨지나?</td></tr><tr><td style="color:#5AA9E6">PART 2</td><td>복제는 무엇을 어디로 보내나?</td></tr><tr><td style="color:#5AA9E6">PART 3</td><td>Distributed는 읽기와 쓰기를 어떻게 나르나?</td></tr><tr><td style="color:#5AA9E6">PART 4</td><td>클러스터 전체를 바꾸는 일 (ON CLUSTER · 리샤딩)</td></tr><tr><td>마무리</td><td>교재 vs 25.8 → 퀴즈 → 질문 리스트</td></tr></table>
+</section>
+<section id="numbers" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">오프닝</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">직접 돌려 보고 놀란 숫자 세 개</h2>
+<div style="display:flex;gap:32px;flex:1"><div style="flex:1;background:#232428;border-radius:20px;padding:40px;display:flex;flex-direction:column;gap:20px"><p style="font-size:96px;font-weight:700;color:#F2A65A;line-height:1">150 B</p><p style="font-size:30px;line-height:1.45;color:#ECEDEF">474 KiB 파트가 레플리카로 복제될 때 Keeper에 남은 로그 크기</p><p data-reveal style="font-size:26px;line-height:1.45;color:#B4B9C2">→ Keeper는 '가져가라' 메모만. 파일은 노드끼리 9009로 직접</p></div><div style="flex:1;background:#232428;border-radius:20px;padding:40px;display:flex;flex-direction:column;gap:20px"><p style="font-size:96px;font-weight:700;color:#F2A65A;line-height:1">2곳 → 1곳</p><p style="font-size:30px;line-height:1.45;color:#ECEDEF"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">WHERE user_id = …</span> Distributed 쿼리가 간 샤드 수, 설정 하나 차이</p><p data-reveal style="font-size:26px;line-height:1.45;color:#B4B9C2">→ <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">optimize_skip_unused_shards</span> 기본 0</p></div><div style="flex:1;background:#232428;border-radius:20px;padding:40px;display:flex;flex-direction:column;gap:20px"><p style="font-size:96px;font-weight:700;color:#F2A65A;line-height:1">0개 → 4개</p><p style="font-size:30px;line-height:1.45;color:#ECEDEF">타임아웃 에러가 난 ON CLUSTER ALTER, 꺼진 노드가 돌아온 뒤 완료된 노드 수</p><p data-reveal style="font-size:26px;line-height:1.45;color:#B4B9C2">→ 에러 ≠ 실패. 노드가 큐에서 스스로 실행</p></div></div>
+</section>
+<section id="p1" style="background:#202124;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;justify-content:center;gap:40px">
+<p style="font-size:44px;font-weight:700;color:#5AA9E6;letter-spacing:2px">PART 1</p>
+<h1 style="font-size:116px;font-weight:700;line-height:1.1">K8s에 ClickHouse를 올릴 때<br>무엇이 깨지나?</h1>
+<p style="font-size:34px;line-height:1.4;color:#B4B9C2">Operator · CHI · Keeper 분리 · PVC · S3 계층 · PDB · 커널</p>
+</section>
+<section id="operator" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 1 · 배포 모델</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">파드 수만 늘려서는 DB 클러스터가 되지 않는다</h2>
+<table style="font-size:32px;color:#B4B9C2"><tr><th style="width:18%;color:#8A9099"></th><th style="width:42%;color:#8A9099">Altinity Operator</th><th style="width:40%;color:#8A9099">Bitnami Helm Chart</th></tr><tr><td>관리 모델</td><td>CRD + 컨트롤러 (reconcile)</td><td>Helm 템플릿 + values</td></tr><tr><td>토폴로지</td><td>CHI에 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">shardsCount</span> · <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">replicasCount</span></td><td>차트가 노출하는 값에 의존</td></tr><tr><td>롤링</td><td>Operator가 ClickHouse 상태를 보며</td><td>StatefulSet 롤링에 의존</td></tr><tr><td>적합</td><td style="color:#5AA9E6">멀티 샤드 · 멀티 레플리카 프로덕션</td><td>단일 노드 · PoC</td></tr></table>
+<div style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">자동으로 안 되는 것: 분산 테이블 설정 · 복제 설정 · Keeper 연결 · 클러스터 정의 · 롤링 중 복제 확인 → Operator가 CHI 하나로 표현</div>
+</section>
+<section id="chi-settings" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:32px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 1 · 🔬 실측 · CHI 설정 위치</p>
+<h2 style="font-size:58px;font-weight:700;line-height:1.15;color:#ECEDEF">교재 CHI 예시를 서버 설정으로 넣으면 서버가 안 뜬다</h2>
+<div style="display:flex;gap:40px;align-items:flex-start"><pre style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;line-height:1.5;background:#232428;border-radius:16px;padding:28px 32px;color:#ECEDEF;white-space:pre-wrap;margin:0;flex:1.25"># CHI (교재)
+spec:
+  configuration:
+    settings:
+      max_connections: &quot;4096&quot;
+      max_concurrent_queries: &quot;200&quot;
+      async_insert: &quot;1&quot;
+      wait_for_async_insert: &quot;1&quot;
+
+# → config.d/chop-generated-settings.xml
+# Code 137: A setting &#x27;async_insert&#x27; appeared
+#   at top level … user-level setting</pre><div data-reveal style="flex:1"><table style="font-size:28px;color:#B4B9C2"><tr><th style="color:#8A9099">설정</th><th style="color:#8A9099">종류</th><th style="color:#8A9099">둘 곳</th></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">max_connections</span> 등</td><td>서버</td><td style="color:#7BC47F">✅ <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">settings</span></td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">async_insert</span> 등</td><td>사용자</td><td style="color:#F2A65A">⚠️ <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">profiles</span></td></tr></table></div></div>
+<div data-reveal style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">kubectl apply</span>는 성공하고 파드는 <b style="color:#ECEDEF;font-weight:700">CrashLoopBackOff</b>. <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">async_insert</span>는 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">configuration.profiles</span>의 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">default/async_insert: 1</span>로.</div>
+</section>
+<section id="keeper" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 1 · Keeper 앙상블</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">Keeper는 Server와 떼어 홀수로</h2>
+<table style="font-size:30px;color:#B4B9C2"><tr><th style="width:22%;color:#8A9099"></th><th style="width:30%;color:#8A9099">값</th><th style="width:48%;color:#8A9099">이유</th></tr><tr><td>정족수</td><td>⌊N/2⌋ + 1</td><td>3노드 → 2대, 5노드 → 3대 필요</td></tr><tr><td>분리</td><td>독립 StatefulSet / CHK</td><td>쿼리 OOM이 합의 장애로 번지지 않게</td></tr><tr><td>디스크</td><td>전용 저지연 PVC</td><td>합의 로그 fsync 지연 = 복제 · DDL 지연</td></tr><tr><td>클라이언트 포트</td><td>교재 9181</td><td style="color:#F2A65A">⚠️ Altinity CHK 기본 2181</td></tr><tr><td>Raft 포트</td><td>교재 9444</td><td style="color:#F2A65A">⚠️ 공식 문서 예시 9234 · Altinity CHK 9444</td></tr></table>
+<div style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">CHI의 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">zookeeper.nodes</span> 포트는 Keeper를 어떻게 띄웠는지(직접 StatefulSet / CHK)에 맞춰야 한다.</div>
+</section>
+<section id="storage" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 1 · 스토리지</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">PVC · AZ · 로컬 NVMe</h2>
+<table style="font-size:32px;color:#B4B9C2"><tr><th style="width:28%;color:#8A9099">주제</th><th style="width:72%;color:#8A9099">핵심</th></tr><tr><td>데이터 PVC</td><td>파드마다 1개. 컨테이너 파일시스템 금지</td></tr><tr><td>ReadWriteOnce</td><td>한 노드만 마운트 → 파드와 볼륨이 <b style="color:#ECEDEF;font-weight:700">같은 AZ</b></td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">WaitForFirstConsumer</span></td><td>파드 스케줄 후 그 AZ에 볼륨 생성 → 마운트 실패 방지</td></tr><tr><td>로컬 NVMe</td><td style="color:#F2A65A">⚠️ 빠르지만 노드가 사라지면 데이터도 → 레플리카 · 재복제 · 백업</td></tr><tr><td>PVC 축소</td><td style="color:#E06C75">❌ 불가. Git에서 1000Gi → 500Gi면 Sync 실패 · 불일치</td></tr></table>
+</section>
+<section id="storage-xml" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:32px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 1 · 🔬 실측 · S3 계층</p>
+<h2 style="font-size:58px;font-weight:700;line-height:1.15;color:#ECEDEF">교재 스토리지 XML 그대로면 서버가 안 뜬다</h2>
+<div style="display:flex;gap:40px;align-items:flex-start"><pre style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;line-height:1.5;background:#232428;border-radius:16px;padding:28px 32px;color:#ECEDEF;white-space:pre-wrap;margin:0;flex:1.25">&lt;storage_configuration&gt;&lt;disks&gt;
+  &lt;default&gt;
+    &lt;path&gt;/var/lib/clickhouse/&lt;/path&gt;
+  &lt;/default&gt;
+  &lt;s3_disk&gt; … &lt;/s3_disk&gt;
+&lt;/disks&gt; … &lt;/storage_configuration&gt;
+
+-- Code 137: &quot;default&quot; disk path should be
+--   provided in &lt;path&gt; not it
+--   &lt;storage_configuration&gt;
+--   (UNKNOWN_ELEMENT_IN_CONFIG)</pre><div data-reveal style="flex:1"><table style="font-size:28px;color:#B4B9C2"><tr><th style="color:#8A9099">빠진 것</th><th style="color:#8A9099">필요한 것</th></tr><tr><td>default 경로</td><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">&lt;default/&gt;</span>만 쓰거나 생략</td></tr><tr><td>7일 후 이동</td><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">TTL … TO VOLUME 'cold_volume'</span></td></tr><tr><td>정책 연결</td><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">SETTINGS storage_policy = 'tiered_policy'</span></td></tr></table></div></div>
+<div data-reveal style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">정책 XML만으로는 아무것도 이동하지 않는다. TTL 이동은 백그라운드 → <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">system.parts.disk_name</span>, <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">system.moves</span>, S3 오류율을 본다.</div>
+</section>
+<section id="pdb" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 1 · 📎 Altinity 0.27.4 소스 대조</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">템플릿의 PDB · 안티 어피니티는 의도와 다르게 동작한다</h2>
+<table style="font-size:28px;color:#B4B9C2"><tr><th style="width:44%;color:#8A9099">교재</th><th style="width:56%;color:#8A9099">소스 확인</th></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">stopClickHouseOnSync: false</span></td><td style="color:#E06C75">❌ CRD에 없는 필드</td></tr><tr><td>수동 PDB <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">minAvailable: 1</span>, selector <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">app: chop</span></td><td style="color:#F2A65A">⚠️ 4개 파드 전체를 묶음 → <b style="color:#ECEDEF;font-weight:700">3개 동시 중단 허용</b></td></tr><tr><td>(교재에 없음)</td><td style="color:#5AA9E6">Operator가 클러스터별 PDB 자동 생성 (<span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">maxUnavailable</span> 1)</td></tr><tr><td>안티 어피니티 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">app In [chop]</span></td><td style="color:#F2A65A">⚠️ <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">chop</span>은 모든 CH 파드 공통 상수 라벨</td></tr><tr><td>대안</td><td style="color:#5AA9E6"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">podDistribution</span>: <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">ReplicaAntiAffinity</span> · <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">ShardAntiAffinity</span></td></tr></table>
+</section>
+<section id="kernel" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 1 · 📎 공식 문서 대조</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">노드 커널 설정: 교재 예시와 공식 권장이 반대</h2>
+<table style="font-size:30px;color:#B4B9C2"><tr><th style="width:28%;color:#8A9099">설정</th><th style="width:28%;color:#8A9099">교재</th><th style="width:44%;color:#8A9099">ClickHouse 공식</th></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">vm.overcommit_memory</span></td><td>0 또는 2 (예시 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">=2</span>)</td><td style="color:#E06C75">❌ '끄지 마라' — <b style="color:#ECEDEF;font-weight:700">0 또는 1</b></td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">vm.max_map_count</span></td><td>262144</td><td style="color:#F2A65A">⚠️ 운영 팁 문서에 권장값 없음</td></tr><tr><td>메모리 보호</td><td>커널 설정</td><td style="color:#5AA9E6">파드 limits + <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">max_server_memory_usage_to_ram_ratio</span>(0.9) + <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">max_memory_usage</span></td></tr></table>
+<div style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">2(strict)는 overcommit을 끈다 → ClickHouse의 큰 가상 메모리 예약이 실패할 수 있다.</div>
+</section>
+<section id="p2" style="background:#202124;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;justify-content:center;gap:40px">
+<p style="font-size:44px;font-weight:700;color:#5AA9E6;letter-spacing:2px">PART 2</p>
+<h1 style="font-size:116px;font-weight:700;line-height:1.1">복제는 무엇을<br>어디로 보내나?</h1>
+<p style="font-size:34px;line-height:1.4;color:#B4B9C2">ReplicatedMergeTree · Keeper 로그 · P2P 파트 전송 · 머지 복제</p>
+</section>
+<section id="shard-vs-replica" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 2 · 두 개의 축</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">샤딩과 복제는 다른 문제를 푼다</h2>
+<table style="font-size:32px;color:#B4B9C2"><tr><th style="width:18%;color:#8A9099"></th><th style="width:40%;color:#8A9099">샤딩</th><th style="width:42%;color:#8A9099">복제</th></tr><tr><td>목적</td><td>처리량 · 용량 수평 확장</td><td>장애 허용 · 읽기 분산</td></tr><tr><td>늘리면</td><td>병렬↑, 분산 조정 · 병합 비용↑</td><td>내구성↑, 저장 · 복제 트래픽↑</td></tr><tr><td>엔진</td><td>Distributed + 샤딩 키</td><td>ReplicatedMergeTree + Keeper</td></tr><tr><td>쓰기</td><td>샤드마다 다른 데이터</td><td style="color:#5AA9E6">어느 레플리카든 INSERT (멀티 마스터)</td></tr><tr><td>일관성</td><td>—</td><td style="color:#F2A65A">⚠️ 비동기 → 최종 수렴</td></tr></table>
+</section>
+<section id="replication" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:32px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 2 · 🔬 실측 · 2샤드×2레플리카</p>
+<h2 style="font-size:58px;font-weight:700;line-height:1.15;color:#ECEDEF">474 KiB 파트, Keeper에는 무엇이 남았나</h2>
+<div style="display:flex;gap:40px;align-items:flex-start"><pre style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;line-height:1.5;background:#232428;border-radius:16px;padding:28px 32px;color:#ECEDEF;white-space:pre-wrap;margin:0;flex:1.25">-- ch-s1r1 에 10만 행
+INSERT INTO hits_local SELECT now64(3), number,
+  &#x27;page_view&#x27;, repeat(&#x27;x&#x27;, 200)
+FROM numbers(100000);
+
+-- Keeper /log/log-0000000000 (150 bytes)
+source replica: ch-s1r1
+block_id: 202611_1581…
+get
+202611_0_0_0</pre><div data-reveal style="flex:1"><table style="font-size:28px;color:#B4B9C2"><tr><th style="color:#8A9099">확인</th><th style="color:#8A9099">결과</th></tr><tr><td>ch-s1r2 행 수</td><td style="color:#7BC47F">✅ 100,000</td></tr><tr><td>ch-s1r2 part_log</td><td>DownloadPart 474.55 KiB</td></tr><tr><td>Keeper 로그</td><td style="color:#5AA9E6">150 바이트</td></tr></table></div></div>
+<div data-reveal style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">Keeper = '누가 무엇을 가져가라'는 약속. 파트 파일은 레플리카끼리 <b style="color:#ECEDEF;font-weight:700">인터서버 HTTP(9009)</b> 로 직접. 그래서 Keeper는 크기보다 <b style="color:#ECEDEF;font-weight:700">지연</b>이 중요하다.</div>
+</section>
+<section id="merge-repl" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 2 · 📎 머지의 복제</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">머지 결과를 받을까, 직접 할까?</h2>
+<table style="font-size:27px;color:#B4B9C2"><tr><th style="width:56%;color:#8A9099">설정 (25.8 기본값)</th><th style="width:44%;color:#8A9099">의미</th></tr><tr><td style="color:#E06C75">❌ <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">replicate_merge_tree_sleep_time_for_merges</span></td><td>교재 설정 — 25.8에 <b style="color:#ECEDEF;font-weight:700">없음</b></td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">always_fetch_merged_part</span> = 0</td><td>1이면 항상 결과를 받아 옴</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">prefer_fetch_merged_part_time_threshold</span> = 3600</td><td>오래 걸리는 머지는 받아 오기 선호</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">execute_merges_on_single_replica_time_threshold</span> = 0</td><td>한 레플리카만 머지 (0 = 꺼짐)</td></tr></table>
+</section>
+<section id="no-on-cluster" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:32px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 2 · 🔬 실측 · DDL</p>
+<h2 style="font-size:58px;font-weight:700;line-height:1.15;color:#ECEDEF">ON CLUSTER 없이 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">ReplicatedMergeTree()</span>를 쓰면?</h2>
+<div style="display:flex;gap:40px;align-items:flex-start"><pre style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;line-height:1.5;background:#232428;border-radius:16px;padding:28px 32px;color:#ECEDEF;white-space:pre-wrap;margin:0;flex:1.25">-- 25.8 기본
+-- default_replica_path = /clickhouse/tables/{uuid}/{shard}
+-- default_replica_name = {replica}
+
+-- 노드마다 따로 (교재 10.4.1)
+CREATE TABLE t_noclu (k UInt64)
+ENGINE = ReplicatedMergeTree() ORDER BY k;
+-- ❌ Macro &#x27;uuid&#x27; in engine arguments is only
+--   supported when the UUID is explicitly
+--   specified, used within an ON CLUSTER query …</pre><div data-reveal style="flex:1"><table style="font-size:28px;color:#B4B9C2"><tr><th style="color:#8A9099">방법</th><th style="color:#8A9099">결과</th></tr><tr><td>ON CLUSTER</td><td style="color:#7BC47F">✅ 같은 UUID → 같은 경로</td></tr><tr><td>노드마다 따로</td><td style="color:#E06C75">❌ 에러로 막힘</td></tr></table></div></div>
+<div data-reveal style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">교재: '매크로가 잘못되면 레플리카가 다른 경로를 볼 수 있다' → 25.8은 그 실수를 <b style="color:#ECEDEF;font-weight:700">에러로 막는다</b>. CREATE · DROP · RENAME은 복제되지 않으므로 ON CLUSTER로.</div>
+</section>
+<section id="p3" style="background:#202124;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;justify-content:center;gap:40px">
+<p style="font-size:44px;font-weight:700;color:#5AA9E6;letter-spacing:2px">PART 3</p>
+<h1 style="font-size:116px;font-weight:700;line-height:1.1">Distributed는 읽기와 쓰기를<br>어떻게 나르나?</h1>
+<p style="font-size:34px;line-height:1.4;color:#B4B9C2">Scatter-Gather · load_balancing · 샤드 건너뛰기 · INSERT 스풀</p>
+</section>
+<section id="lb" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 3 · 🔬 실측 · load_balancing</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">레플리카 고르는 방법은 교재보다 많다</h2>
+<table style="font-size:30px;color:#B4B9C2"><tr><th style="width:40%;color:#8A9099">모드</th><th style="width:60%;color:#8A9099">동작</th></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">random</span> (기본)</td><td><b style="color:#ECEDEF;font-weight:700">오류 수가 가장 적은</b> 레플리카 중 무작위</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">nearest_hostname</span></td><td>호스트명 글자가 덜 다른 쪽 (네트워크 거리 아님)</td></tr><tr><td>🆕 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">hostname_levenshtein_distance</span></td><td>호스트명 편집 거리</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">in_order</span> / <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">first_or_random</span></td><td>설정 순서 / 첫 번째 실패 시 무작위</td></tr><tr><td>🆕 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">round_robin</span></td><td>돌아가며</td></tr></table>
+<div style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">함께 보는 기본값: <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">prefer_localhost_replica</span> = 1 · <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">max_replica_delay_for_distributed_queries</span> = 300초 · <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">distributed_aggregation_memory_efficient</span> = 1</div>
+</section>
+<section id="skip-shards" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 3 · 🔬 실측 · 샤드 건너뛰기</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">샤딩 키 조건이 있으면 한 샤드만 물을까?</h2>
+<table style="font-size:34px;color:#B4B9C2"><tr><th style="width:44%;color:#8A9099"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">optimize_skip_unused_shards</span></th><th style="width:56%;color:#8A9099">원격 쿼리를 받은 노드</th></tr><tr><td>0 (25.8 기본)</td><td style="color:#F2A65A">⚠️ ch-s1r2, ch-s2r1 — 두 샤드 모두</td></tr><tr><td>1</td><td style="color:#7BC47F">✅ ch-s1r1 — 한 샤드만</td></tr></table>
+<div style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">hits_all = Distributed(…, cityHash64(user_id))</span>, <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">WHERE user_id = 1000005</span>. 교재는 '설정에 따라 확인'이라고만 한다 — 기본은 <b style="color:#ECEDEF;font-weight:700">꺼져 있다</b>.</div>
+</section>
+<section id="dist-insert" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:32px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 3 · 🔬 실측 · Distributed INSERT</p>
+<h2 style="font-size:58px;font-weight:700;line-height:1.15;color:#ECEDEF">Distributed로 INSERT하면 데이터는 어디에 머무나?</h2>
+<div style="display:flex;gap:40px;align-items:flex-start"><pre style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;line-height:1.5;background:#232428;border-radius:16px;padding:28px 32px;color:#ECEDEF;white-space:pre-wrap;margin:0;flex:1.25">SYSTEM STOP DISTRIBUTED SENDS hits_all;
+INSERT INTO hits_all SELECT now64(3),
+  number + 1000000, &#x27;click&#x27;, &#x27;{}&#x27;
+FROM numbers(1000);
+
+SELECT data_path, data_files
+FROM system.distribution_queue;
+-- …/shard2_all_replicas/   1
+-- 파일: …/shard2_all_replicas/1.bin</pre><div data-reveal style="flex:1"><table style="font-size:28px;color:#B4B9C2"><tr><th style="color:#8A9099">몫</th><th style="color:#8A9099">위치</th></tr><tr><td>샤드 1 (이니시에이터 소속)</td><td>로컬에 바로 기록</td></tr><tr><td>샤드 2</td><td style="color:#F2A65A">⚠️ 이니시에이터 디스크 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">1.bin</span></td></tr><tr><td>FLUSH 후</td><td style="color:#7BC47F">✅ 506 / 494행</td></tr></table></div></div>
+<div data-reveal style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">기본 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">distributed_foreground_insert = 0</span> (비동기 스풀). 이니시에이터가 죽으면 묶인다 → <b style="color:#ECEDEF;font-weight:700">SELECT는 Distributed로, 대량 INSERT는 샤드 로컬로</b>. (교재에 없는 필수: <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">internal_replication = true</span>)</div>
+</section>
+<section id="p4" style="background:#202124;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;justify-content:center;gap:40px">
+<p style="font-size:44px;font-weight:700;color:#5AA9E6;letter-spacing:2px">PART 4</p>
+<h1 style="font-size:116px;font-weight:700;line-height:1.1">클러스터 전체를<br>바꾸는 일</h1>
+<p style="font-size:34px;line-height:1.4;color:#B4B9C2">ON CLUSTER 분산 DDL · 진단 쿼리 · quorum · 리샤딩 · FETCH PART</p>
+</section>
+<section id="ddl-down" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:32px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 4 · 🔬 실측 · 노드 하나가 꺼졌을 때</p>
+<h2 style="font-size:58px;font-weight:700;line-height:1.15;color:#ECEDEF">ON CLUSTER가 타임아웃 에러를 냈다 — 실패일까?</h2>
+<div style="display:flex;gap:40px;align-items:flex-start"><pre style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;line-height:1.5;background:#232428;border-radius:16px;padding:28px 32px;color:#ECEDEF;white-space:pre-wrap;margin:0;flex:1.25">-- ch-s1r2 를 docker stop
+ALTER TABLE hits_local ON CLUSTER &#x27;prod_cluster&#x27;
+  ADD COLUMN c1 UInt8 DEFAULT 0
+SETTINGS distributed_ddl_task_timeout = 5;
+-- ❌ Code 159: … is not finished on 1 of 4 hosts
+
+-- docker start ch-s1r2 → 잠시 후</pre><div data-reveal style="flex:1"><table style="font-size:28px;color:#B4B9C2"><tr><th style="color:#8A9099">시점</th><th style="color:#8A9099">결과</th></tr><tr><td>직후</td><td>3노드 완료, 클라이언트는 에러</td></tr><tr><td>재시작 후</td><td style="color:#5AA9E6">ch-s1r2가 큐에서 스스로 실행</td></tr><tr><td>최종</td><td style="color:#7BC47F">✅ 4노드 Finished</td></tr></table></div></div>
+<div data-reveal style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">에러 ≠ 실패, OK ≠ 전부 완료. <b style="color:#ECEDEF;font-weight:700"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">system.distributed_ddl_queue</span>로 노드별 확인</b>. 기본 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">distributed_ddl_task_timeout</span> = 180, <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">distributed_ddl_output_mode</span> = throw.</div>
+</section>
+<section id="ddl-queue" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:32px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 4 · 🔬 실측 · 진단 쿼리</p>
+<h2 style="font-size:58px;font-weight:700;line-height:1.15;color:#ECEDEF">교재의 DDL 진단 쿼리는 그대로 실행되지 않는다</h2>
+<div style="display:flex;gap:40px;align-items:flex-start"><pre style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;line-height:1.5;background:#232428;border-radius:16px;padding:28px 32px;color:#ECEDEF;white-space:pre-wrap;margin:0;flex:1.25">SELECT entry, host, port, status,
+       exception, query
+FROM system.distributed_ddl_queue;
+-- ❌ Unknown expression identifier `exception`
+
+SELECT entry, host, status,
+       exception_code, exception_text
+FROM system.distributed_ddl_queue
+ORDER BY entry, host;   -- ✅</pre></div>
+<div data-reveal style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">25.8 컬럼: entry · entry_version · initiator_host · cluster · query · host · port · status · <b style="color:#ECEDEF;font-weight:700">exception_code · exception_text</b> · query_duration_ms … (교재도 'DESCRIBE로 먼저 확인'이라고 단서)</div>
+</section>
+<section id="quorum" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:32px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 4 · 🔬 실측 · insert_quorum</p>
+<h2 style="font-size:58px;font-weight:700;line-height:1.15;color:#ECEDEF">정족수 INSERT가 실패했다 — 데이터는 없을까?</h2>
+<div style="display:flex;gap:40px;align-items:flex-start"><pre style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;line-height:1.5;background:#232428;border-radius:16px;padding:28px 32px;color:#ECEDEF;white-space:pre-wrap;margin:0;flex:1.25">-- ch-s1r2 를 멈춘 상태에서
+INSERT INTO hits_local
+SETTINGS insert_quorum = 2,
+         insert_quorum_timeout = 5000
+SELECT …;
+-- ❌ Code 319: Unknown quorum status.
+--   The data was inserted in the local replica
+--   but we could not verify quorum.</pre><div data-reveal style="flex:1"><table style="font-size:28px;color:#B4B9C2"><tr><th style="color:#8A9099">관찰</th><th style="color:#8A9099">결과</th></tr><tr><td>ch-s1r1 행</td><td style="color:#F2A65A">⚠️ 이미 들어가 있음</td></tr><tr><td>ch-s1r2 재시작 후</td><td style="color:#7BC47F">✅ 자동으로 따라잡음</td></tr></table></div></div>
+<div data-reveal style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">quorum 에러 = 롤백이 아니라 '<b style="color:#ECEDEF;font-weight:700">확인 못 함</b>'. 그대로 재시도하면 중복 → 6장의 멱등성 토큰과 함께. (25.8 기본 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">insert_quorum</span> = 0)</div>
+</section>
+<section id="reshard" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 4 · 리샤딩</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">샤드를 늘려도 기존 데이터는 옮겨지지 않는다</h2>
+<table style="font-size:30px;color:#B4B9C2"><tr><th style="width:42%;color:#8A9099">교재 예제</th><th style="width:58%;color:#8A9099">문제</th></tr><tr><td>3단계 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">FROM hits_all_v1</span></td><td style="color:#F2A65A">⚠️ 정의된 적 없는 테이블</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">WHERE event_date …</span></td><td style="color:#F2A65A">⚠️ 스키마에 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">event_date</span> 없음</td></tr><tr><td>v1 · v2가 같은 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">hits_local</span></td><td style="color:#E06C75">❌ 기존 행 + 복사본 → <b style="color:#ECEDEF;font-weight:700">중복</b>. 별도 로컬 테이블 필요</td></tr><tr><td>clickhouse-copier</td><td>🔬25.8 이미지에 <b style="color:#ECEDEF;font-weight:700">없음</b></td></tr></table>
+<div style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">순서: 새 토폴로지 준비 → 신규 쓰기 전환(시각 기록) → 과거 파티션 이관 → 건수·합계·중복 검증 → 이전 경로 정리</div>
+</section>
+<section id="fetch-part" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:32px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">PART 4 · 🔬 실측 · FETCH PART</p>
+<h2 style="font-size:58px;font-weight:700;line-height:1.15;color:#ECEDEF"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">FETCH PART … FROM</span> 자리에는 무엇이 들어가나?</h2>
+<div style="display:flex;gap:40px;align-items:flex-start"><pre style="font-family:'JetBrains Mono', 'Courier New', monospace;font-size:24px;line-height:1.5;background:#232428;border-radius:16px;padding:28px 32px;color:#ECEDEF;white-space:pre-wrap;margin:0;flex:1.25">ALTER TABLE hits_copy
+FETCH PART &#x27;202611_0_0_0&#x27; FROM &#x27;ch-s1r2&#x27;;
+-- ❌ ZooKeeper path must starts with &#x27;/&#x27;,
+--    got &#x27;ch-s1r2&#x27;
+
+ALTER TABLE hits_copy
+FETCH PART &#x27;202611_0_0_0&#x27;
+FROM &#x27;/clickhouse/tables/5021…/01&#x27;;   -- ✅
+-- → detached/ → ATTACH PART → 100,000행</pre></div>
+<div data-reveal style="background:#232428;border-left:8px solid #F2A65A;border-radius:16px;padding:24px 36px;font-size:28px;line-height:1.5;color:#B4B9C2">교재의 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">FROM 'source_replica'</span>는 레플리카 이름이 아니라 <b style="color:#ECEDEF;font-weight:700">원본 테이블의 Keeper 경로</b>. 파트를 통째로 옮기는 것이라 새 샤딩 키로 <b style="color:#ECEDEF;font-weight:700">재분배하는 용도는 아니다</b>.</div>
+</section>
+<section id="summary" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">한 장 요약</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">데이터는 노드끼리, 약속은 Keeper에</h2>
+<table style="font-size:29px;color:#B4B9C2"><tr><th style="width:22%;color:#8A9099">질문</th><th style="width:78%;color:#8A9099">답</th></tr><tr><td>K8s에서 깨지는 것</td><td>CHI settings의 사용자 설정, default 디스크 path → 서버 기동 실패</td></tr><tr><td>Keeper는</td><td>홀수 · Server와 분리 · 저지연 디스크 · 로그만 저장 (150 B)</td></tr><tr><td>복제는</td><td>멀티 마스터 · 비동기 · 파트는 9009로 P2P · ON CLUSTER로 생성</td></tr><tr><td>Distributed는</td><td>SELECT는 부분 집계 후 병합 · INSERT는 이니시에이터 디스크 스풀</td></tr><tr><td>ON CLUSTER는</td><td>Keeper 큐 · 타임아웃 후에도 나중에 실행 · 큐 테이블로 확인</td></tr><tr><td>리샤딩은</td><td>자동 재분배 없음 · 별도 로컬 테이블 · 검증 · copier 없음</td></tr></table>
+</section>
+<section id="diffs" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#F2A65A;letter-spacing:2px">교재 vs 25.8 실측</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.15;color:#ECEDEF">직접 해 보니 달랐던 것</h2>
+<table style="font-size:27px;color:#B4B9C2"><tr><th style="width:52%;color:#8A9099">교재</th><th style="width:48%;color:#8A9099">실제</th></tr><tr><td>CHI <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">settings</span>에 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">async_insert</span></td><td style="color:#E06C75">❌ 서버 기동 실패 → <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">profiles</span>로</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">&lt;default&gt;&lt;path&gt;</span> 스토리지 XML</td><td style="color:#E06C75">❌ 서버 기동 실패</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">vm.overcommit_memory = 2</span></td><td style="color:#E06C75">❌ 공식은 0 또는 1</td></tr><tr><td>수동 PDB <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">app: chop</span></td><td style="color:#F2A65A">⚠️ 전체 파드 묶음 · Operator가 자동 PDB</td></tr><tr><td>ON CLUSTER 없이 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">ReplicatedMergeTree()</span></td><td style="color:#E06C75">❌ 에러로 막힘</td></tr><tr><td>DDL 큐의 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">exception</span> 컬럼</td><td style="color:#E06C75">❌ 없음 → <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">exception_text</span></td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">FETCH PART … FROM '레플리카'</span></td><td style="color:#E06C75">❌ Keeper 경로여야</td></tr><tr><td><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">replicate_merge_tree_sleep_time_for_merges</span></td><td style="color:#E06C75">❌ 없는 설정</td></tr></table>
+</section>
+<section id="quiz" style="background:#202124;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;justify-content:center;gap:40px">
+<p style="font-size:44px;font-weight:700;color:#5AA9E6;letter-spacing:2px">QUIZ</p>
+<h1 style="font-size:116px;font-weight:700;line-height:1.1">퀴즈 11문제</h1>
+<p style="font-size:34px;line-height:1.4;color:#B4B9C2">→ 한 번 누르면 정답, 한 번 더 누르면 다음 문제</p>
+</section>
+<section id="quiz-01" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q1 / 11 · PART 1 · CHI</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.25">Altinity CHI의 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">configuration.settings</span>에 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">async_insert: "1"</span>을 넣으면?</h2>
+<div style="flex:1"></div>
+<div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px"><p style="font-size:24px;font-weight:600;color:#F2A65A;letter-spacing:2px">정답</p><p style="font-size:44px;font-weight:700;line-height:1.3">서버가 안 뜬다 (CrashLoop)</p><p style="font-size:30px;line-height:1.5;color:#B4B9C2">settings는 서버 설정 파일이 되고 async_insert는 사용자 설정. <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">profiles</span>에 둔다.</p></div>
+</section>
+<section id="quiz-02" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q2 / 11 · PART 1 · Keeper</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.25">Keeper 3노드는 몇 대가 살아야 정족수? 5노드라면?</h2>
+<div style="flex:1"></div>
+<div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px"><p style="font-size:24px;font-weight:600;color:#F2A65A;letter-spacing:2px">정답</p><p style="font-size:44px;font-weight:700;line-height:1.3">2대 · 3대</p><p style="font-size:30px;line-height:1.5;color:#B4B9C2">⌊N/2⌋ + 1. 4노드는 3대가 필요해 장애 허용이 3노드와 같다.</p></div>
+</section>
+<section id="quiz-03" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q3 / 11 · PART 1 · 스토리지</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.25"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">storage_configuration</span>에서 default 디스크에 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">&lt;path&gt;</span>를 주면?</h2>
+<div style="flex:1"></div>
+<div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px"><p style="font-size:24px;font-weight:600;color:#F2A65A;letter-spacing:2px">정답</p><p style="font-size:44px;font-weight:700;line-height:1.3">서버 기동 실패</p><p style="font-size:30px;line-height:1.5;color:#B4B9C2"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">UNKNOWN_ELEMENT_IN_CONFIG</span>. default 경로는 최상위 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">&lt;path&gt;</span>로만.</p></div>
+</section>
+<section id="quiz-04" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q4 / 11 · PART 1 · PDB</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.25">교재 PDB(<span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">minAvailable: 1</span>, <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">app: chop</span>)는 2×2에서 동시에 몇 개 중단을 허용할까?</h2>
+<div style="flex:1"></div>
+<div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px"><p style="font-size:24px;font-weight:600;color:#F2A65A;letter-spacing:2px">정답</p><p style="font-size:44px;font-weight:700;line-height:1.3">3개</p><p style="font-size:30px;line-height:1.5;color:#B4B9C2">4개 파드를 모두 묶기 때문. Operator는 클러스터별 PDB(maxUnavailable 1)를 자동으로 만든다.</p></div>
+</section>
+<section id="quiz-05" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q5 / 11 · PART 2 · Keeper</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.25">474 KiB 파트를 복제할 때 Keeper 로그 항목은 대략 얼마?</h2>
+<div style="flex:1"></div>
+<div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px"><p style="font-size:24px;font-weight:600;color:#F2A65A;letter-spacing:2px">정답</p><p style="font-size:44px;font-weight:700;line-height:1.3">약 150바이트</p><p style="font-size:30px;line-height:1.5;color:#B4B9C2">'어느 레플리카의 어떤 파트를 get' 메모뿐. 파일은 9009로 노드끼리.</p></div>
+</section>
+<section id="quiz-06" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q6 / 11 · PART 2 · DDL</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.25">ON CLUSTER 없이 노드마다 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">ReplicatedMergeTree()</span>로 CREATE하면?</h2>
+<div style="flex:1"></div>
+<div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px"><p style="font-size:24px;font-weight:600;color:#F2A65A;letter-spacing:2px">정답</p><p style="font-size:44px;font-weight:700;line-height:1.3">에러</p><p style="font-size:30px;line-height:1.5;color:#B4B9C2"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">{uuid}</span> 매크로는 UUID 지정 · ON CLUSTER · Replicated DB에서만.</p></div>
+</section>
+<section id="quiz-07" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q7 / 11 · PART 3 · 샤드</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.25"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">WHERE user_id = …</span>인데 두 샤드 모두에 쿼리가 갔다. 확인할 설정은?</h2>
+<div style="flex:1"></div>
+<div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px"><p style="font-size:24px;font-weight:600;color:#F2A65A;letter-spacing:2px">정답</p><p style="font-size:44px;font-weight:700;line-height:1.3"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">optimize_skip_unused_shards</span></p><p style="font-size:30px;line-height:1.5;color:#B4B9C2">기본 0. 1이면 한 샤드만.</p></div>
+</section>
+<section id="quiz-08" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q8 / 11 · PART 3 · INSERT</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.25">Distributed로 INSERT한 원격 샤드 몫이 아직 안 보인다. 데이터는 어디에?</h2>
+<div style="flex:1"></div>
+<div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px"><p style="font-size:24px;font-weight:600;color:#F2A65A;letter-spacing:2px">정답</p><p style="font-size:44px;font-weight:700;line-height:1.3">이니시에이터 디스크</p><p style="font-size:30px;line-height:1.5;color:#B4B9C2"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">…/shard2_all_replicas/*.bin</span>, <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">system.distribution_queue</span>.</p></div>
+</section>
+<section id="quiz-09" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q9 / 11 · PART 4 · DDL</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.25">노드 하나가 꺼진 채 ON CLUSTER가 타임아웃 에러. 노드가 돌아오면?</h2>
+<div style="flex:1"></div>
+<div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px"><p style="font-size:24px;font-weight:600;color:#F2A65A;letter-spacing:2px">정답</p><p style="font-size:44px;font-weight:700;line-height:1.3">스스로 실행한다</p><p style="font-size:30px;line-height:1.5;color:#B4B9C2">Keeper 큐에서 작업을 찾아 실행. 큐 테이블로 확인.</p></div>
+</section>
+<section id="quiz-10" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q10 / 11 · PART 4 · FETCH</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.25"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">FETCH PART 'p' FROM …</span>의 FROM 자리에는?</h2>
+<div style="flex:1"></div>
+<div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px"><p style="font-size:24px;font-weight:600;color:#F2A65A;letter-spacing:2px">정답</p><p style="font-size:44px;font-weight:700;line-height:1.3">원본 테이블의 Keeper 경로</p><p style="font-size:30px;line-height:1.5;color:#B4B9C2">레플리카 이름이면 'must starts with /' 에러.</p></div>
+</section>
+<section id="quiz-11" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:40px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">Q11 / 11 · PART 4 · quorum</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.25"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">insert_quorum = 2</span>에서 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">UNKNOWN_STATUS_OF_INSERT</span>. 데이터는?</h2>
+<div style="flex:1"></div>
+<div data-reveal style="display:flex;flex-direction:column;gap:16px;background:#232428;border-left:8px solid #F2A65A;border-radius:20px;padding:40px 48px"><p style="font-size:24px;font-weight:600;color:#F2A65A;letter-spacing:2px">정답</p><p style="font-size:44px;font-weight:700;line-height:1.3">로컬에는 들어갔다</p><p style="font-size:30px;line-height:1.5;color:#B4B9C2">정족수 확인만 실패. 재시도하면 중복 가능.</p></div>
+</section>
+<section id="questions" style="background:#202124;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;justify-content:center;gap:40px">
+<p style="font-size:44px;font-weight:700;color:#5AA9E6;letter-spacing:2px">QUESTIONS</p>
+<h1 style="font-size:116px;font-weight:700;line-height:1.1">질문 리스트</h1>
+<p style="font-size:34px;line-height:1.4;color:#B4B9C2">정답이 없는 질문들 — 각자의 언어로 설명해 보기</p>
+</section>
+<section id="q-why" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">질문 리스트 1 / 3 · 왜 그렇게 동작할까?</p>
+<h2 style="font-size:60px;font-weight:700;line-height:1.15;color:#ECEDEF">왜 그렇게 동작할까?</h2>
+<div style="display:flex;flex-direction:column;gap:30px"><div style="display:flex;gap:28px;align-items:flex-start"><p style="font-size:40px;font-weight:700;color:#5AA9E6;min-width:72px">Q1</p><div style="display:flex;flex-direction:column;gap:8px"><p style="font-size:34px;line-height:1.35;color:#ECEDEF">Keeper는 왜 파트 파일을 저장하지 않을까?</p><p style="font-size:24px;line-height:1.45;color:#8A9099">합의 로그는 작고 빨라야 한다 · 474 KiB vs 150 B</p></div></div><div style="display:flex;gap:28px;align-items:flex-start"><p style="font-size:40px;font-weight:700;color:#5AA9E6;min-width:72px">Q2</p><div style="display:flex;flex-direction:column;gap:8px"><p style="font-size:34px;line-height:1.35;color:#ECEDEF">Keeper는 왜 홀수 노드로 띄울까? 4노드는 왜 손해일까?</p><p style="font-size:24px;line-height:1.45;color:#8A9099">4노드 정족수 3 → 장애 허용 1대로 3노드와 같음</p></div></div><div style="display:flex;gap:28px;align-items:flex-start"><p style="font-size:40px;font-weight:700;color:#5AA9E6;min-width:72px">Q3</p><div style="display:flex;flex-direction:column;gap:8px"><p style="font-size:34px;line-height:1.35;color:#ECEDEF">ClickHouse는 왜 ON CLUSTER 없는 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">ReplicatedMergeTree()</span>를 에러로 막을까?</p><p style="font-size:24px;line-height:1.45;color:#8A9099">노드마다 다른 UUID → 다른 Keeper 경로 → 복제가 조용히 안 됨</p></div></div><div style="display:flex;gap:28px;align-items:flex-start"><p style="font-size:40px;font-weight:700;color:#5AA9E6;min-width:72px">Q4</p><div style="display:flex;flex-direction:column;gap:8px"><p style="font-size:34px;line-height:1.35;color:#ECEDEF">Distributed INSERT는 왜 기본이 비동기(디스크 스풀)일까?</p><p style="font-size:24px;line-height:1.45;color:#8A9099">클라이언트 지연 vs 이니시에이터 장애 시 데이터 위치</p></div></div><div style="display:flex;gap:28px;align-items:flex-start"><p style="font-size:40px;font-weight:700;color:#5AA9E6;min-width:72px">Q5</p><div style="display:flex;flex-direction:column;gap:8px"><p style="font-size:34px;line-height:1.35;color:#ECEDEF">ON CLUSTER가 에러를 내도 나중에 실행되는 설계는 장점일까 위험일까?</p><p style="font-size:24px;line-height:1.45;color:#8A9099">복구 후 자동 수렴 vs '에러인데 적용됨' 혼란</p></div></div></div>
+</section>
+<section id="q-alt" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">질문 리스트 2 / 3 · 다른 방식이라면?</p>
+<h2 style="font-size:60px;font-weight:700;line-height:1.15;color:#ECEDEF">다른 방식으로 구현하면?</h2>
+<div style="display:flex;flex-direction:column;gap:30px"><div style="display:flex;gap:28px;align-items:flex-start"><p style="font-size:40px;font-weight:700;color:#5AA9E6;min-width:72px">Q6</p><div style="display:flex;flex-direction:column;gap:8px"><p style="font-size:34px;line-height:1.35;color:#ECEDEF">Operator 대신 Helm Chart + 직접 만든 Keeper로 2×2를 운영하면 무엇을 직접 해야 할까?</p><p style="font-size:24px;line-height:1.45;color:#8A9099">클러스터 정의 · 매크로 · 롤링 순서 · PDB</p></div></div><div style="display:flex;gap:28px;align-items:flex-start"><p style="font-size:40px;font-weight:700;color:#5AA9E6;min-width:72px">Q7</p><div style="display:flex;flex-direction:column;gap:8px"><p style="font-size:34px;line-height:1.35;color:#ECEDEF">리샤딩: <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">INSERT … SELECT</span> vs 파트 <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">FETCH/ATTACH</span> vs 백업 복원 — 언제 무엇을?</p><p style="font-size:24px;line-height:1.45;color:#8A9099">재분배 필요 여부 · 속도 · 중복 검증</p></div></div><div style="display:flex;gap:28px;align-items:flex-start"><p style="font-size:40px;font-weight:700;color:#5AA9E6;min-width:72px">Q8</p><div style="display:flex;flex-direction:column;gap:8px"><p style="font-size:34px;line-height:1.35;color:#ECEDEF">Distributed INSERT 대신 수집기가 샤딩 키를 계산하면 무엇을 얻고 잃나?</p><p style="font-size:24px;line-height:1.45;color:#8A9099">이니시에이터 스풀 제거 vs 라우팅 로직 · 레플리카 장애 처리</p></div></div></div>
+</section>
+<section id="q-ops" style="background:#191919;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;color:#5AA9E6;letter-spacing:2px">질문 리스트 3 / 3 · 실제 운영에서도?</p>
+<h2 style="font-size:60px;font-weight:700;line-height:1.15;color:#ECEDEF">실제 운영에서도 그럴까?</h2>
+<div style="display:flex;flex-direction:column;gap:30px"><div style="display:flex;gap:28px;align-items:flex-start"><p style="font-size:40px;font-weight:700;color:#5AA9E6;min-width:72px">Q9</p><div style="display:flex;flex-direction:column;gap:8px"><p style="font-size:34px;line-height:1.35;color:#ECEDEF">노드 드레인 중 같은 샤드 레플리카 2개가 함께 내려가는 걸 막으려면?</p><p style="font-size:24px;line-height:1.45;color:#8A9099">podDistribution · 샤드별 PDB · AZ 분산</p></div></div><div style="display:flex;gap:28px;align-items:flex-start"><p style="font-size:40px;font-weight:700;color:#5AA9E6;min-width:72px">Q10</p><div style="display:flex;flex-direction:column;gap:8px"><p style="font-size:34px;line-height:1.35;color:#ECEDEF">ArgoCD 자동 Sync로 이미지 태그를 바꾸면? 승인형 Sync는 언제 필요할까?</p><p style="font-size:24px;line-height:1.45;color:#8A9099">롤링 재시작 · 복제 지연 · Keeper 정족수</p></div></div><div style="display:flex;gap:28px;align-items:flex-start"><p style="font-size:40px;font-weight:700;color:#5AA9E6;min-width:72px">Q11</p><div style="display:flex;flex-direction:column;gap:8px"><p style="font-size:34px;line-height:1.35;color:#ECEDEF"><span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">UNKNOWN_STATUS_OF_INSERT</span>를 받은 클라이언트는 재시도해야 할까?</p><p style="font-size:24px;line-height:1.45;color:#8A9099">이미 로컬에 기록 · 중복 제거 토큰 · 6장 멱등성</p></div></div><div style="display:flex;gap:28px;align-items:flex-start"><p style="font-size:40px;font-weight:700;color:#5AA9E6;min-width:72px">Q12</p><div style="display:flex;flex-direction:column;gap:8px"><p style="font-size:34px;line-height:1.35;color:#ECEDEF">S3 Cold 파트를 읽는 쿼리가 느릴 때 무엇부터 볼까?</p><p style="font-size:24px;line-height:1.45;color:#8A9099">캐시 · <span style="font-family:'JetBrains Mono', 'Courier New', monospace;color:#5AA9E6">system.parts.disk_name</span> · S3 요청 · 오류</p></div></div></div>
+</section>
+<section id="discuss" style="background:#202124;color:#ECEDEF;font-family:'IBM Plex Sans KR', Arial, sans-serif;padding:112px 128px;display:flex;flex-direction:column;justify-content:center;gap:40px">
+<p style="font-size:44px;font-weight:700;color:#5AA9E6;letter-spacing:2px">DISCUSSION</p>
+<h1 style="font-size:116px;font-weight:700;line-height:1.1">키워드 심화 ·<br>Keeper는 무엇을 저장하나</h1>
+<p style="font-size:34px;line-height:1.4;color:#B4B9C2">복제 로그 · 큐 · 블록 해시 · DDL 큐는 있고, 파트 파일 · 컬럼 데이터는 없다 — 그래서 크기보다 지연</p>
+</section>
+</div>
+<div id="notes" aria-live="polite"></div>
+<div id="bar"></div>
+<div id="hud"><button id="prev" aria-label="이전 슬라이드">◀</button><span id="num"></span><button id="next" aria-label="다음 슬라이드">▶</button><button id="nt" aria-label="발표 메모 보기">메모 (N)</button><button id="fs" aria-label="전체 화면">전체 화면</button></div>
+<script type="application/json" id="notes-data">["9장은 K8s를 띄우지 않았다 — ClickHouse 쪽은 컨테이너로, Operator 쪽은 소스로 확인", "", "150B → PART 2, 2곳→1곳 → PART 3, 4개 → PART 4", "9장. 서버가 안 뜨는 설정 두 개가 핵심", "", "Altinity: settings → chop-generated-settings.xml, profiles → chop-generated-users.xml", "", "", "", "pdbManaged 기본 true, pdbMaxUnavailable 기본 1 (normalizer.go)", "", "오프닝 숫자 &#x27;150 B&#x27;의 답", "", "", "", "", "오프닝 숫자 &#x27;2곳 → 1곳&#x27;의 답", "", "각 노드 query_log에서 is_initial_query = 0 개수", "", "오프닝 숫자 &#x27;0개 → 4개&#x27;의 답", "", "", "", "", "", "", "18개 전체는 블로그 글 본문", "", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "정답 전에 한 명씩 답 들어보기", "왜 그렇게 동작할까? / 다르게 구현하면? / 실제 운영에서도?", "", "", "", "정족수를 잃으면 ReplicatedMergeTree는 읽기 전용 / 작은 INSERT 폭주 시 Keeper에 쌓이는 것"]</script>
+<script>
+(function () {
+  var stage = document.getElementById('stage');
+  var slides = Array.prototype.slice.call(stage.children);
+  var bar = document.getElementById('bar');
+  var num = document.getElementById('num');
+  var notes = JSON.parse(document.getElementById('notes-data').textContent);
+  var notesEl = document.getElementById('notes');
+  var cur = 0;
+  function renderNotes() {
+    notesEl.innerHTML = '';
+    var h = document.createElement('b');
+    h.textContent = '발표 메모 · ' + (cur + 1) + ' / ' + slides.length;
+    notesEl.appendChild(h);
+    notesEl.appendChild(document.createTextNode(notes[cur] || '(메모 없음)'));
+  }
+  function toggleNotes() { notesEl.classList.toggle('on'); renderNotes(); }
+  function fit() {
+    var s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    stage.style.transform = 'scale(' + s + ') translate(-50%, -50%)';
+  }
+  function show(i, back) {
+    cur = Math.max(0, Math.min(slides.length - 1, i));
+    Array.prototype.forEach.call(slides[cur].querySelectorAll('[data-reveal]'), function (el) {
+      el.classList.toggle('shown', !!back);
+    });
+    slides.forEach(function (el, k) { el.classList.toggle('on', k === cur); });
+    bar.style.width = ((cur + 1) / slides.length * 100) + '%';
+    num.textContent = (cur + 1) + ' / ' + slides.length;
+    renderNotes();
+    if (location.hash !== '#' + (cur + 1)) history.replaceState(null, '', '#' + (cur + 1));
+  }
+  function next() {
+    var hidden = slides[cur].querySelectorAll('[data-reveal]:not(.shown)');
+    if (hidden.length) hidden[0].classList.add('shown');
+    else show(cur + 1);
+  }
+  function prev() { show(cur - 1, true); }
+  document.addEventListener('keydown', function (e) {
+    if (['ArrowRight', 'PageDown', ' ', 'Enter'].indexOf(e.key) >= 0) { e.preventDefault(); next(); }
+    else if (['ArrowLeft', 'PageUp', 'Backspace'].indexOf(e.key) >= 0) { e.preventDefault(); prev(); }
+    else if (e.key === 'Home') show(0);
+    else if (e.key === 'End') show(slides.length - 1);
+    else if (e.code === 'KeyF') toggleFs();
+    else if (e.code === 'KeyN') toggleNotes();
+  });
+  stage.addEventListener('click', function (e) {
+    if (e.target.closest('a')) return;
+    if (e.clientX > window.innerWidth / 2) next(); else prev();
+  });
+  var sx = null;
+  document.addEventListener('touchstart', function (e) { sx = e.touches[0].clientX; }, { passive: true });
+  document.addEventListener('touchend', function (e) {
+    if (sx === null) return;
+    var dx = e.changedTouches[0].clientX - sx;
+    if (Math.abs(dx) > 40) { if (dx < 0) next(); else prev(); }
+    sx = null;
+  });
+  function toggleFs() {
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+    else document.exitFullscreen();
+  }
+  document.getElementById('prev').onclick = prev;
+  document.getElementById('next').onclick = next;
+  document.getElementById('fs').onclick = toggleFs;
+  document.getElementById('nt').onclick = toggleNotes;
+  window.addEventListener('hashchange', function () {
+    var n = parseInt(location.hash.slice(1), 10);
+    if (n && n - 1 !== cur) show(n - 1);
+  });
+  window.addEventListener('resize', fit);
+  fit();
+  show((parseInt(location.hash.slice(1), 10) || 1) - 1);
+})();
+</script>
+</body>
+</html>
